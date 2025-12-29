@@ -101,7 +101,7 @@ QWidget {
 QLabel#TitleLabel {
     color: #AAAAAA;
     font-weight: bold;
-    font-size: 13px;
+    font-size: 15px;
     padding-left: 5px;
 }
 
@@ -204,9 +204,11 @@ class QuickWindow(QWidget):
         self.btn_open_full.clicked.connect(self.open_main_window_requested) # 修改为发射信号
         self.btn_minimize.clicked.connect(self.showMinimized)
         self.btn_close.clicked.connect(self.close)
-        
+
         self._update_partition_tree()
         self._update_list()
+
+        self.partition_tree.currentItemChanged.connect(self._update_partition_status_display)
 
     def _init_ui(self):
         self.setWindowTitle("快速笔记")
@@ -231,7 +233,7 @@ class QuickWindow(QWidget):
         self.main_layout = QVBoxLayout(self.container)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(10)
-        
+
         # --- Title Bar ---
         title_bar_layout = QHBoxLayout()
         title_bar_layout.setContentsMargins(0, 0, 0, 0)
@@ -271,14 +273,14 @@ class QuickWindow(QWidget):
         self.btn_minimize.setObjectName("MinButton")
         self.btn_minimize.setToolTip("最小化")
         self.btn_minimize.setFixedSize(32, 32)
-        
+
         # 5. 关闭 (Close)
         self.btn_close = QPushButton(self)
         self.btn_close.setObjectName("CloseButton")
         self.btn_close.setToolTip("关闭")
         self.btn_close.setIcon(self.style().standardIcon(QStyle.SP_TitleBarCloseButton))
         self.btn_close.setFixedSize(32, 32)
-        
+
         # 添加到布局
         title_bar_layout.addWidget(self.btn_stay_top)
         title_bar_layout.addWidget(self.btn_toggle_side)
@@ -326,6 +328,13 @@ class QuickWindow(QWidget):
         content_layout.addWidget(self.splitter)
         self.main_layout.addWidget(content_widget)
 
+        # --- Status Bar ---
+        self.partition_status_label = QLabel("当前分区: 全部数据")
+        self.partition_status_label.setObjectName("PartitionStatusLabel")
+        self.partition_status_label.setStyleSheet("font-size: 11px; color: #888; padding-left: 5px;")
+        self.main_layout.addWidget(self.partition_status_label)
+        self.partition_status_label.hide()
+
     # --- Restore & Save State ---
     def _restore_window_state(self):
         geometry = self.settings.value("geometry")
@@ -339,6 +348,11 @@ class QuickWindow(QWidget):
             self.move(x, y)
         splitter_state = self.settings.value("splitter_state")
         if splitter_state: self.splitter.restoreState(splitter_state)
+
+        # 恢复分区面板的可见性
+        is_hidden = self.settings.value("partition_panel_hidden", False, type=bool)
+        self.partition_tree.setHidden(is_hidden)
+        self._update_partition_status_display()
 
     def closeEvent(self, event):
         self.settings.setValue("geometry", self.saveGeometry())
@@ -542,8 +556,30 @@ class QuickWindow(QWidget):
             if partition.children:
                 self._add_partition_recursive(partition.children, item, partition_counts)
 
-    def _on_partition_selection_changed(self, c, p): self._update_list()
-    def _toggle_partition_panel(self): self.partition_tree.setVisible(not self.partition_tree.isVisible())
+    def _update_partition_status_display(self):
+        """更新底部状态栏的显示"""
+        is_hidden = self.partition_tree.isHidden()
+        if is_hidden:
+            current_item = self.partition_tree.currentItem()
+            if current_item:
+                # 移除数量统计部分，只显示名称
+                text = current_item.text(0).split(' (')[0]
+                self.partition_status_label.setText(f"当前分区: {text}")
+            else:
+                self.partition_status_label.setText("当前分区: N/A")
+            self.partition_status_label.show()
+        else:
+            self.partition_status_label.hide()
+
+    def _on_partition_selection_changed(self, c, p):
+        self._update_list()
+        self._update_partition_status_display()
+
+    def _toggle_partition_panel(self):
+        is_hidden = not self.partition_tree.isVisible()
+        self.partition_tree.setVisible(not is_hidden)
+        self.settings.setValue("partition_panel_hidden", is_hidden)
+        self._update_partition_status_display()
 
     def _toggle_stay_on_top(self):
         if not user32: return # 非 Windows 直接返回

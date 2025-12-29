@@ -169,9 +169,30 @@ class DatabaseManager:
         return c.fetchall()
 
     def get_partitions_tree(self):
-        # 这是一个存根实现，当前版本不直接支持层级分区
-        # 未来可以扩展为一个真实地构建分区树的方法
-        return []
+        """查询并构建一个层级的分类树"""
+        class Partition:
+            def __init__(self, id, name, color, parent_id):
+                self.id = id
+                self.name = name
+                self.color = color
+                self.parent_id = parent_id
+                self.children = []
+
+        c = self.conn.cursor()
+        c.execute("SELECT id, name, color, parent_id FROM categories ORDER BY name")
+
+        # 使用字典来快速查找节点
+        nodes = {row[0]: Partition(*row) for row in c.fetchall()}
+
+        tree = []
+        for node_id, node in nodes.items():
+            if node.parent_id in nodes:
+                nodes[node.parent_id].children.append(node)
+            else:
+                # 顶层节点
+                tree.append(node)
+
+        return tree
 
     def get_partition_item_counts(self):
         """获取用于快速窗口的各种计数"""
