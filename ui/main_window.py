@@ -7,7 +7,6 @@ from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLine
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QKeySequence, QCursor
 from core.config import STYLES, COLORS
-from core.settings import load_setting
 from data.db_manager import DatabaseManager
 from services.backup_service import BackupService
 from ui.sidebar import Sidebar
@@ -17,11 +16,10 @@ from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 
 class MainWindow(QWidget):
-    def __init__(self, context):
+    def __init__(self):
         super().__init__()
         print("[DEBUG] ========== MainWindow 初始化开始 ==========")
-        self.context = context
-        self.db = context.db_manager
+        self.db = DatabaseManager()
         self.curr_filter = ('all', None)
         self.selected_id = None
         self._drag_pos = None
@@ -30,6 +28,11 @@ class MainWindow(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint)
         self._setup_ui()
         self._load_data()
+
+        self.ball = FloatingBall(self)
+        g = QApplication.desktop().screenGeometry()
+        self.ball.move(g.width()-80, g.height()//2)
+        self.ball.show()
         print("[DEBUG] MainWindow 初始化完成")
 
     def _setup_ui(self):
@@ -86,7 +89,6 @@ class MainWindow(QWidget):
         layout.addWidget(title)
         
         self.search = QLineEdit()
-        self.search.setClearButtonEnabled(True)
         self.search.setPlaceholderText('🔍 搜索灵感...')
         self.search.setFixedWidth(280)
         self.search.setFixedHeight(28)
