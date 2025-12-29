@@ -4,7 +4,7 @@ import sys
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLineEdit,
                                QPushButton, QLabel, QScrollArea, QShortcut, QMessageBox,
                                QApplication, QToolTip, QMenu, QFrame, QTextEdit, QDialog)
-from PyQt5.QtCore import Qt, QTimer, QPoint
+from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal
 from PyQt5.QtGui import QKeySequence, QCursor
 from core.config import STYLES, COLORS
 from core.settings import load_setting
@@ -17,6 +17,8 @@ from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 
 class MainWindow(QWidget):
+    closing = pyqtSignal()
+
     def __init__(self):
         super().__init__()
         print("[DEBUG] ========== MainWindow 初始化开始 ==========")
@@ -550,7 +552,10 @@ class MainWindow(QWidget):
         BackupService.run_backup()
         QApplication.quit()
 
-    def closeEvent(self, e):
-        BackupService.run_backup()
+    def closeEvent(self, event):
+        """
+        重写关闭事件，使其发出 closing 信号而不是直接关闭。
+        """
+        self.closing.emit()
         self.hide()
-        e.ignore()
+        event.ignore()
