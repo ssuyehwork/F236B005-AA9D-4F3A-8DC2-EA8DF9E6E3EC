@@ -7,6 +7,7 @@ from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 # 导入窗口和数据库管理器
 from ui.quick_window import QuickWindow
 from ui.main_window import MainWindow
+from ui.ball import FloatingBall
 from data.db_manager import DatabaseManager
 
 SERVER_NAME = "K_KUAIJIBIJI_SINGLE_INSTANCE_SERVER"
@@ -21,31 +22,47 @@ class AppManager(QObject):
         self.db_manager = None
         self.main_window = None
         self.quick_window = None
+        self.ball = None
 
     def start(self):
-        """初始化数据库并启动主窗口 (QuickWindow)"""
+        """初始化数据库、创建所有核心组件并启动应用"""
         try:
             self.db_manager = DatabaseManager()
         except Exception as e:
             print(f"❌ 数据库连接失败: {e}")
-            # 在这里可以显示一个错误对话框
             sys.exit(1)
 
+        # 1. 优先创建 MainWindow (但不显示)，因为悬浮球依赖它
+        self.main_window = MainWindow()
+        self.main_window.closing.connect(self.on_main_window_closing)
+
+        # 2. 创建并显示悬浮球
+        self.ball = FloatingBall(self.main_window)
+        self.ball.request_show_quick_window.connect(self.show_quick_window)
+        self.ball.request_quit_app.connect(self.quit_application)
+        self.ball.show() # 悬浮球默认可见
+
+        # 3. 创建 QuickWindow (但不显示)
         self.quick_window = QuickWindow(self.db_manager)
         self.quick_window.open_main_window_requested.connect(self.show_main_window)
-        self.quick_window.show()
+        # 默认启动时不显示 QuickWindow，由悬浮球唤出
+        # self.quick_window.show()
+
+    def show_quick_window(self):
+        """显示快速笔记窗口"""
+        if self.quick_window:
+            if self.quick_window.isMinimized():
+                self.quick_window.showNormal()
+            self.quick_window.show()
+            self.quick_window.activateWindow()
 
     def show_main_window(self):
         """创建或显示主数据管理窗口"""
-        if self.main_window is None:
-            self.main_window = MainWindow() # MainWindow 不需要 db_manager 参数
-            self.main_window.closing.connect(self.on_main_window_closing)
-
-        # 如果窗口被最小化了，恢复它
-        if self.main_window.isMinimized():
-            self.main_window.showNormal()
-        self.main_window.show()
-        self.main_window.activateWindow() # 将窗口带到前台
+        if self.main_window:
+            if self.main_window.isMinimized():
+                self.main_window.showNormal()
+            self.main_window.show()
+            self.main_window.activateWindow()
 
     def on_main_window_closing(self):
         """
@@ -54,6 +71,12 @@ class AppManager(QObject):
         """
         if self.main_window:
             self.main_window.hide()
+
+    def quit_application(self):
+        """退出整个应用程序"""
+        # 在这里可以添加清理逻辑，例如保存状态
+        print("ℹ️  应用程序正在退出...")
+        self.app.quit()
 
 def main():
     """主函数入口"""
@@ -89,10 +112,9 @@ def main():
         conn = server.nextPendingConnection()
         if conn and conn.waitForReadyRead(500):
             msg = conn.readAll().data().decode()
-            if msg == 'SHOW' and manager.quick_window:
-                # 显示并激活主窗口
-                manager.quick_window.showNormal()
-                manager.quick_window.activateWindow()
+            if msg == 'SHOW':
+                # 显示并激活快速笔记窗口
+                manager.show_quick_window()
 
     server.newConnection.connect(handle_new_connection)
 

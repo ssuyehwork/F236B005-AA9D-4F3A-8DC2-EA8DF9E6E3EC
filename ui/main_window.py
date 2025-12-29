@@ -32,18 +32,6 @@ class MainWindow(QWidget):
         self._setup_ui()
         self._load_data()
         
-        self.ball = FloatingBall(self)
-        
-        # 加载悬浮球位置
-        ball_pos = load_setting('floating_ball_pos')
-        if ball_pos and isinstance(ball_pos, dict) and 'x' in ball_pos and 'y' in ball_pos:
-            self.ball.move(ball_pos['x'], ball_pos['y'])
-        else:
-            # 如果没有保存的位置，则使用默认位置
-            g = QApplication.desktop().screenGeometry()
-            self.ball.move(g.width()-80, g.height()//2)
-            
-        self.ball.show()
         print("[DEBUG] MainWindow 初始化完成")
 
     def _setup_ui(self):
