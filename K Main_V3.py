@@ -1,5 +1,6 @@
 # K Main_V3.py
 import sys
+import time
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QObject
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
@@ -88,18 +89,26 @@ def main():
 
     # 如果能连接上服务器，说明已有实例在运行
     if socket.waitForConnected(500):
-        # 发送一个 "SHOW" 消息给正在运行的实例
-        socket.write(b'SHOW')
+        print("ℹ️  检测到旧实例，发送退出指令...")
+        # 发送 "EXIT" 消息给正在运行的实例
+        socket.write(b'EXIT')
         socket.flush()
-        socket.waitForBytesWritten()
+        socket.waitForBytesWritten(1000)
         socket.disconnectFromServer()
-        print("ℹ️  应用已在运行，已发送显示请求。正在退出...")
-        return # 退出当前实例
 
-    # 没有现有实例，则创建服务器
+        # 等待旧实例退出
+        print("⏳ 等待旧实例退出...")
+        time.sleep(0.5)
+
+        # 清理可能残留的服务器，确保新实例可以监听
+        QLocalServer.removeServer(SERVER_NAME)
+        print("✅ 旧实例已清理")
+    else:
+        # 如果连接不上，也清理一下，以防有僵尸服务器
+        QLocalServer.removeServer(SERVER_NAME)
+
+    # 创建新的服务器（即当前实例）
     server = QLocalServer()
-    # 清理可能残留的服务器文件
-    QLocalServer.removeServer(SERVER_NAME)
     if not server.listen(SERVER_NAME):
         print(f"❌ 无法创建单例服务器: {server.errorString()}")
         # 即使无法创建服务器，也继续运行，只是单例功能失效
@@ -115,6 +124,9 @@ def main():
             if msg == 'SHOW':
                 # 显示并激活快速笔记窗口
                 manager.show_quick_window()
+            elif msg == 'EXIT':
+                print("ℹ️  收到退出指令，准备退出...")
+                manager.quit_application()
 
     server.newConnection.connect(handle_new_connection)
 
