@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ui/advanced_tag_selector.py
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLineEdit, QScrollArea, QLabel, QFrame, QGridLayout)
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 from PyQt5.QtGui import QCursor, QFont
@@ -16,16 +16,18 @@ class AdvancedTagSelector(QWidget):
         self.db = db
         self.idea_id = idea_id
 
-        # --- 状态变量 ---
         self.selected_tags = set()
-        self.tag_widgets = {} # { "tagName": {"button": QPushButton, "group": QWidget} }
+        self.tag_widgets = {}
+        self._is_closing = False # 添加一个状态标志，防止重复关闭
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating, False)
 
         self._init_ui()
         self._load_tags()
+
+        # 连接全局焦点变化信号
+        QApplication.instance().focusChanged.connect(self._on_focus_changed)
 
     def _init_ui(self):
         """初始化UI界面"""
@@ -48,7 +50,6 @@ class AdvancedTagSelector(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        # 搜索框
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("🔍 搜索标签...")
         self.search_input.setStyleSheet(f"""
@@ -61,7 +62,6 @@ class AdvancedTagSelector(QWidget):
         self.search_input.textChanged.connect(self._filter_tags)
         layout.addWidget(self.search_input)
 
-        # 滚动区域
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("""
@@ -87,10 +87,7 @@ class AdvancedTagSelector(QWidget):
 
     def _load_tags(self):
         """从数据库加载并显示标签"""
-        # 1. 获取当前笔记已有的标签
         self.selected_tags = set(self.db.get_tags(self.idea_id))
-
-        # 2. 获取所有标签及其使用频率
         c = self.db.conn.cursor()
         c.execute('''
             SELECT t.name, COUNT(it.idea_id) as cnt
@@ -101,19 +98,15 @@ class AdvancedTagSelector(QWidget):
         ''')
         all_tags = c.fetchall()
 
-        # 3. 定义分组逻辑
-        #    - 最常用的前12个为“最近/常用”
-        #    - 其余为“其它”
         top_tags = all_tags[:12]
         other_tags = all_tags[12:]
 
-        # 4. 创建UI
         if top_tags:
             self._create_group("最近使用", top_tags)
         if other_tags:
             self._create_group("其它", other_tags)
 
-        self._filter_tags() # 初始过滤一次，以防搜索框有内容
+        self._filter_tags()
 
     def _create_group(self, title, tags):
         """创建标签分组的UI"""
@@ -133,7 +126,11 @@ class AdvancedTagSelector(QWidget):
 
         row, col = 0, 0
         for name, count in tags:
-            btn = QPushButton(f"{name} ({count})")
+            btn_text = f"{name} ({count})"
+            if name in self.selected_tags:
+                btn_text = f"✓ {btn_text}"
+
+            btn = QPushButton(btn_text)
             btn.setCheckable(True)
             btn.setChecked(name in self.selected_tags)
             btn.setStyleSheet(self._get_button_style(btn.isChecked()))
@@ -153,48 +150,39 @@ class AdvancedTagSelector(QWidget):
     def _on_tag_toggled(self, button, name, checked):
         """处理标签按钮的点击事件"""
         button.setStyleSheet(self._get_button_style(checked))
+        count_text = f"({button.text().split('(')[-1]}"
+        base_text = f"{name} {count_text}"
+
         if checked:
             self.selected_tags.add(name)
-            # 在按钮文本前添加勾号
-            if not button.text().startswith("✓"):
-                button.setText(f"✓ {button.text()}")
+            button.setText(f"✓ {base_text}")
         else:
             self.selected_tags.discard(name)
-            # 移除文本前的勾号
-            button.setText(button.text().replace("✓ ", ""))
+            button.setText(base_text)
 
     def _filter_tags(self):
         """根据搜索框内容过滤标签"""
         term = self.search_input.text().lower()
-
         visible_tags_in_group = {}
 
         for name, widgets in self.tag_widgets.items():
-            button = widgets["button"]
-            group_label = widgets["group_label"]
-
-            # 初始化分组计数
+            button, group_label = widgets["button"], widgets["group_label"]
             if group_label not in visible_tags_in_group:
                 visible_tags_in_group[group_label] = 0
-
             if term in name.lower():
                 button.show()
                 visible_tags_in_group[group_label] += 1
             else:
                 button.hide()
 
-        # 根据分组内的可见标签数，决定是否显示分组容器
         for name, widgets in self.tag_widgets.items():
-             group_container = widgets["group"]
-             group_label = widgets["group_label"]
+             group_container, group_label = widgets["group"], widgets["group_label"]
              if visible_tags_in_group.get(group_label, 0) > 0:
                  group_container.show()
              else:
                  group_container.hide()
 
     def _get_button_style(self, checked):
-        """根据选中状态返回按钮样式"""
-        # 移除文本前的勾号，以正确设置样式
         base_style = """
             QPushButton {{
                 border-radius: 6px; padding: 7px; text-align: left;
@@ -206,41 +194,60 @@ class AdvancedTagSelector(QWidget):
             }}
         """
         if checked:
-            return base_style.format(
-                bg_color=COLORS['primary'],
-                border_color=COLORS['primary'],
-                text_color='white'
-            )
+            return base_style.format(bg_color=COLORS['primary'], border_color=COLORS['primary'], text_color='white')
         else:
-            return base_style.format(
-                bg_color="#3C3C3C",
-                border_color="#555",
-                text_color="#DDD"
-            )
+            return base_style.format(bg_color="#3C3C3C", border_color="#555", text_color="#DDD")
 
     def _save_tags(self):
         """将最终选择的标签保存到数据库"""
-        print(f"[DEBUG] 正在为 idea_id={self.idea_id} 保存标签: {self.selected_tags}")
         c = self.db.conn.cursor()
-        # 1. 清空此笔记的所有旧标签关联
         c.execute('DELETE FROM idea_tags WHERE idea_id = ?', (self.idea_id,))
-
-        # 2. 重新插入所有选中的标签关联
         for tag_name in self.selected_tags:
-            # 确保标签存在于 tags 表中 (通常情况下一定存在)
             c.execute('INSERT OR IGNORE INTO tags (name) VALUES (?)', (tag_name,))
             c.execute('SELECT id FROM tags WHERE name = ?', (tag_name,))
             result = c.fetchone()
             if result:
                 tag_id = result[0]
-                c.execute('INSERT INTO idea_tags (idea_id, tag_id) VALUES (?, ?)',
-                          (self.idea_id, tag_id))
+                c.execute('INSERT INTO idea_tags (idea_id, tag_id) VALUES (?, ?)', (self.idea_id, tag_id))
         self.db.conn.commit()
-        print(f"[DEBUG] 标签保存成功。")
+
+    def _is_child_widget(self, widget):
+        """检查一个控件是否是此面板的子控件"""
+        if widget is None:
+            return False
+
+        current = widget
+        while current:
+            if current is self:
+                return True
+            current = current.parent()
+        return False
+
+    def _on_focus_changed(self, old_widget, new_widget):
+        """全局焦点变化事件处理器"""
+        if self._is_closing or not self.isVisible():
+            return
+
+        # 如果新的焦点不在这个面板内部，则触发关闭
+        if not self._is_child_widget(new_widget):
+            self._handle_close()
+
+    def _handle_close(self):
+        """封装关闭逻辑"""
+        if self._is_closing:
+            return
+        self._is_closing = True
+
+        # 先断开信号连接，避免重复触发
+        QApplication.instance().focusChanged.disconnect(self._on_focus_changed)
+
+        self._save_tags()
+        self.tags_confirmed.emit(list(self.selected_tags))
+        self.close()
 
     def show_at_cursor(self):
         cursor_pos = QCursor.pos()
-        screen_geo = self.screen().geometry()
+        screen_geo = QApplication.desktop().screenGeometry()
         x, y = cursor_pos.x() + 15, cursor_pos.y() + 15
         if x + self.width() > screen_geo.right(): x = cursor_pos.x() - self.width() - 15
         if y + self.height() > screen_geo.bottom(): y = screen_geo.bottom() - self.height() - 15
@@ -248,9 +255,3 @@ class AdvancedTagSelector(QWidget):
         self.show()
         self.activateWindow()
         self.search_input.setFocus()
-
-    def focusOutEvent(self, event):
-        self._save_tags()
-        self.tags_confirmed.emit(list(self.selected_tags))
-        self.close()
-        super().focusOutEvent(event)
