@@ -132,12 +132,21 @@ STYLES = {
         QLineEdit {{
             background-color: {COLORS['bg_mid']};
             border: 1px solid {COLORS['bg_light']};
-            border-radius: 16px;
+            border-radius: 14px;
             padding: 6px 12px;
             color: #eee;
             font-size: 13px;
         }}
         QLineEdit:focus {{ border: 1px solid {COLORS['primary']}; }}
+        QLineEdit::clear-button {{
+            image: url(data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'></circle><line x1='15' y1='9' x2='9' y2='15'></line><line x1='9' y1='9' x2='15' y2='15'></line></svg>);
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            margin-right: 4px;
+        }}
+        QLineEdit::clear-button:hover {{
+            background-color: rgba(255, 255, 255, 0.2);
+        }}
     """,
 
     'card_base': "border-radius: 12px;"

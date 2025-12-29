@@ -92,6 +92,7 @@ class MainWindow(QWidget):
         layout.addWidget(title)
         
         self.search = QLineEdit()
+        self.search.setClearButtonEnabled(True)
         self.search.setPlaceholderText('🔍 搜索灵感...')
         self.search.setFixedWidth(280)
         self.search.setFixedHeight(28)
