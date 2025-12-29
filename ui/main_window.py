@@ -47,7 +47,7 @@ class MainWindow(QWidget):
         print("[DEBUG] MainWindow 初始化完成")
 
     def _setup_ui(self):
-        self.setWindowTitle('RapidNotes Pro')
+        self.setWindowTitle('快速笔记 - 管理面板')
         self.resize(1300, 700)
         self.setStyleSheet(STYLES['main_window'])
         
@@ -95,7 +95,7 @@ class MainWindow(QWidget):
         layout.setContentsMargins(15, 0, 10, 0)
         layout.setSpacing(6)
         
-        title = QLabel('💡 RapidNotes Pro')
+        title = QLabel('💡 快速笔记')
         title.setStyleSheet("font-size: 13px; font-weight: bold; color: #4a90e2;")
         layout.addWidget(title)
         

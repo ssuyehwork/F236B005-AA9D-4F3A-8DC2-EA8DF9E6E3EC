@@ -209,7 +209,7 @@ class QuickWindow(QWidget):
         self._update_list()
 
     def _init_ui(self):
-        self.setWindowTitle("Clipboard Pro")
+        self.setWindowTitle("快速笔记")
         self.resize(830, 630)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
@@ -237,7 +237,7 @@ class QuickWindow(QWidget):
         title_bar_layout.setContentsMargins(0, 0, 0, 0)
         title_bar_layout.setSpacing(5)
 
-        self.title_label = QLabel("Clipboard Pro")
+        self.title_label = QLabel("快速笔记")
         self.title_label.setObjectName("TitleLabel")
         title_bar_layout.addWidget(self.title_label)
 

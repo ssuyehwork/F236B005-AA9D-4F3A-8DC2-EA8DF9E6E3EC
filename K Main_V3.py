@@ -9,7 +9,7 @@ from ui.quick_window import QuickWindow
 from ui.main_window import MainWindow
 from data.db_manager import DatabaseManager
 
-SERVER_NAME = "K_RAPIDNOTES_SINGLE_INSTANCE_SERVER"
+SERVER_NAME = "K_KUAIJIBIJI_SINGLE_INSTANCE_SERVER"
 
 class AppManager(QObject):
     """
