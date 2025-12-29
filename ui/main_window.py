@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLine
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QKeySequence, QCursor
 from core.config import STYLES, COLORS
+from core.logger import get_logger
 from data.db_manager import DatabaseManager
 from services.backup_service import BackupService
 from ui.sidebar import Sidebar
@@ -15,10 +16,12 @@ from ui.dialogs import EditDialog
 from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 
+logger = get_logger(__name__)
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        print("[DEBUG] ========== MainWindow 初始化开始 ==========")
+        logger.debug("========== MainWindow 初始化开始 ==========")
         self.db = DatabaseManager()
         self.curr_filter = ('all', None)
         self.selected_id = None
@@ -34,7 +37,7 @@ class MainWindow(QWidget):
         g = QApplication.desktop().screenGeometry()
         self.ball.move(g.width()-80, g.height()//2)
         self.ball.show()
-        print("[DEBUG] MainWindow 初始化完成")
+        logger.debug("MainWindow 初始化完成")
 
     def _setup_ui(self):
         self.setWindowTitle('RapidNotes Pro')
@@ -78,6 +81,7 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+T"), self, self._handle_extract_shortcut)
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, self._copy_tags)
         QShortcut(QKeySequence("Ctrl+Shift+V"), self, self._paste_tags)
+        logger.debug("UI 设置完成")
 
 
     def _create_titlebar(self):
@@ -247,6 +251,7 @@ class MainWindow(QWidget):
             btn.setStyleSheet(f"QPushButton {{ background-color: {'#4a90e2' if is_active else 'rgba(74,144,226,0.15)'}; border: 1px solid {'#4a90e2' if is_active else 'rgba(74,144,226,0.3)'}; border-radius: 12px; padding: 6px 12px; text-align: left; color: {'white' if is_active else '#4a90e2'}; font-size: 12px; font-weight: {'bold' if is_active else 'normal'}; }} QPushButton:hover {{ background-color: #4a90e2; color: white; }}")
             btn.clicked.connect(lambda _, t=tag_name: self._filter_by_tag(t))
             self.tag_list_layout.addWidget(btn)
+        logger.debug(f"标签面板已刷新，共 {len(tags)} 个标签")
 
     def _filter_by_tag(self, tag_name):
         if self.current_tag_filter == tag_name:
@@ -256,6 +261,7 @@ class MainWindow(QWidget):
             self.tag_filter_label.setText(f'🏷️ {tag_name}')
             self.tag_filter_label.show()
             self.clear_tag_btn.show()
+            logger.info(f"按标签筛选: {tag_name}")
             self._load_data()
             self._refresh_tag_panel()
 
@@ -263,6 +269,7 @@ class MainWindow(QWidget):
         self.current_tag_filter = None
         self.tag_filter_label.hide()
         self.clear_tag_btn.hide()
+        logger.info("清除标签筛选")
         self._load_data()
         self._refresh_tag_panel()
 
@@ -298,6 +305,7 @@ class MainWindow(QWidget):
         title = lines[0][:25].strip() if lines else "快速记录"
         if len(lines) > 1 or len(lines[0]) > 25: title += "..."
 
+        logger.info(f"快速添加笔记: {title}")
         idea_id = self.db.add_idea(title, raw, COLORS['primary'], [], None)
         self._show_tag_selector(idea_id)
         self._refresh_all()
@@ -308,6 +316,7 @@ class MainWindow(QWidget):
         tag_selector.show_at_cursor()
 
     def _on_tags_confirmed(self, idea_id, tags):
+        logger.debug(f"笔记 {idea_id} 的标签已确认: {tags}")
         self._show_tooltip(f'✅ 已记录并绑定 {len(tags)} 个标签', 2000)
         self._refresh_all()
 
@@ -325,11 +334,13 @@ class MainWindow(QWidget):
         else:
             self.header_label.setText(titles.get(f_type, '灵感列表'))
 
+        logger.info(f"设置过滤器: 类型={f_type}, 值={val}")
         self._load_data()
         self._update_ui_state()
         self._refresh_tag_panel()
 
     def _load_data(self):
+        logger.debug("开始加载数据...")
         while self.list_layout.count():
             w = self.list_layout.takeAt(0).widget()
             if w: w.deleteLater()
@@ -356,6 +367,7 @@ class MainWindow(QWidget):
             self.list_layout.addWidget(c)
             self.cards[d[0]] = c
 
+        logger.info(f"数据加载完成, 共 {len(data_list)} 条记录")
         self._update_ui_state()
 
     def _show_card_menu(self, idea_id, pos):
@@ -363,10 +375,12 @@ class MainWindow(QWidget):
         self._on_select(idea_id)
 
         data = self.db.get_idea(idea_id)
-        if not data: return
+        if not data:
+            logger.warning(f"尝试显示卡片菜单失败, 笔记 ID {idea_id} 不存在")
+            return
 
         menu = QMenu(self)
-        menu.setStyleSheet(f"QMenu {{ ... }}") # 保留原有样式
+        menu.setStyleSheet(STYLES['menu'])
 
         in_trash = (self.curr_filter[0] == 'trash')
         if not in_trash:
@@ -393,12 +407,14 @@ class MainWindow(QWidget):
 
     def _move_to_category(self, cat_id):
         if self.selected_id:
+            logger.info(f"移动笔记 {self.selected_id} 到分类 {cat_id}")
             self.db.move_category(self.selected_id, cat_id)
             self._refresh_all()
             self._show_tooltip('✅ 已移动分类')
 
     def _on_select(self, iid):
         self.selected_id = iid
+        logger.debug(f"选择笔记: {iid}")
         for k, c in self.cards.items():
             c.update_selection(k == iid)
         self._update_ui_state()
@@ -420,46 +436,56 @@ class MainWindow(QWidget):
             if d:
                 self.btns['pin'].setText('📍' if not d[4] else '📌')
                 self.btns['fav'].setText('☆' if not d[5] else '⭐')
+        logger.debug(f"UI 状态更新: in_trash={in_trash}, has_sel={has_sel}")
 
     def _show_tooltip(self, msg, dur=2000):
         QToolTip.showText(QCursor.pos(), msg, self)
         QTimer.singleShot(dur, QToolTip.hideText)
 
     def new_idea(self):
+        logger.info("打开新建笔记对话框")
         if EditDialog(self.db).exec_(): self._refresh_all()
 
     def _do_edit(self):
-        if self.selected_id and EditDialog(self.db, self.selected_id).exec_(): self._refresh_all()
+        if self.selected_id:
+            logger.info(f"打开编辑对话框: 笔记 ID {self.selected_id}")
+            if EditDialog(self.db, self.selected_id).exec_(): self._refresh_all()
 
     def _do_pin(self):
         if self.selected_id:
+            logger.info(f"切换置顶状态: 笔记 ID {self.selected_id}")
             self.db.toggle_field(self.selected_id, 'is_pinned')
             self._load_data()
 
     def _do_fav(self):
         if self.selected_id:
+            logger.info(f"切换收藏状态: 笔记 ID {self.selected_id}")
             self.db.toggle_field(self.selected_id, 'is_favorite')
             self._refresh_all()
 
     def _do_del(self):
         if self.selected_id:
+            logger.info(f"移动到回收站: 笔记 ID {self.selected_id}")
             self.db.set_deleted(self.selected_id, True)
             self.selected_id = None
             self._refresh_all()
 
     def _do_restore(self):
         if self.selected_id:
+            logger.info(f"从回收站恢复: 笔记 ID {self.selected_id}")
             self.db.set_deleted(self.selected_id, False)
             self.selected_id = None
             self._refresh_all()
 
     def _do_destroy(self):
-        if self.selected_id and QMessageBox.Yes == QMessageBox.warning(self, '⚠️ 警告', '...', QMessageBox.Yes | QMessageBox.No):
+        if self.selected_id and QMessageBox.Yes == QMessageBox.warning(self, '⚠️ 警告', '永久删除后将无法恢复，确定要删除吗？', QMessageBox.Yes | QMessageBox.No):
+            logger.warning(f"永久删除: 笔记 ID {self.selected_id}")
             self.db.delete_permanent(self.selected_id)
             self.selected_id = None
             self._refresh_all()
 
     def _refresh_all(self):
+        logger.info("正在刷新所有数据和视图...")
         self._load_data()
         self.sidebar.refresh()
         self._update_ui_state()
@@ -469,6 +495,7 @@ class MainWindow(QWidget):
         data = self.db.get_idea(idea_id)
         if not data:
             self._show_tooltip('⚠️ 数据不存在', 1500)
+            logger.warning(f"提取内容失败, 笔记 ID {idea_id} 不存在")
             return
 
         content_to_copy = data[2] if data[2] else ""
@@ -476,13 +503,18 @@ class MainWindow(QWidget):
 
         preview = content_to_copy.replace('\n', ' ')[:40] + ('...' if len(content_to_copy) > 40 else '')
         self._show_tooltip(f'✅ 内容已提取到剪贴板\n\n📋 {preview}', 2500)
+        logger.info(f"已提取笔记 {idea_id} 的内容到剪贴板")
 
     def _extract_all(self):
-        # ... (保留原有实现)
+        logger.info("开始批量提取...")
+        # ... (保留原有实现, 可以在其中添加详细日志)
         pass
 
     def _handle_del_key(self):
-        self._do_destroy() if self.curr_filter[0] == 'trash' else self._do_del()
+        if self.curr_filter[0] == 'trash':
+            self._do_destroy()
+        else:
+            self._do_del()
 
     def _handle_extract_shortcut(self):
         if self.selected_id:
@@ -494,6 +526,7 @@ class MainWindow(QWidget):
         if self.selected_id:
             self.copied_tags = self.db.get_tags(self.selected_id)
             self._show_tooltip(f"✅ 已复制 {len(self.copied_tags)} 个标签", 1500)
+            logger.info(f"已复制笔记 {self.selected_id} 的标签: {self.copied_tags}")
         else:
             self._show_tooltip("⚠️ 请先选择一条数据", 1500)
 
@@ -516,6 +549,7 @@ class MainWindow(QWidget):
         self.db.update_idea(self.selected_id, idea_data[1], idea_data[2], idea_data[3], new_tags, idea_data[8])
 
         self._show_tooltip(f"✅ 已成功粘贴并合并 {len(self.copied_tags)} 个标签", 2000)
+        logger.info(f"已向笔记 {self.selected_id} 粘贴标签: {self.copied_tags}")
         self._refresh_all()
 
     def show_main_window(self):
@@ -523,10 +557,12 @@ class MainWindow(QWidget):
         self.activateWindow()
 
     def quit_app(self):
+        logger.info("正在备份并退出应用程序...")
         BackupService.run_backup()
         QApplication.quit()
 
     def closeEvent(self, e):
+        logger.info("关闭事件触发, 正在备份并隐藏窗口...")
         BackupService.run_backup()
         self.hide()
         e.ignore()
