@@ -93,6 +93,7 @@ class MainWindow(QWidget):
         self.search.setFixedWidth(280)
         self.search.setFixedHeight(28)
         self.search.setStyleSheet(STYLES['input'] + "QLineEdit { border-radius: 14px; }")
+        self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._load_data)
         layout.addWidget(self.search)
         layout.addStretch()
