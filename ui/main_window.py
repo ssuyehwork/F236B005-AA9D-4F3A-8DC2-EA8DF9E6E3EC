@@ -482,7 +482,7 @@ class MainWindow(QWidget):
         self._refresh_tag_panel()
 
     def _extract_single(self, idea_id):
-        """双击直接提取内容到剪贴板"""
+        """双击直接提取正文内容到剪贴板"""
         print(f"[DEBUG] _extract_single 被调用，idea_id={idea_id}")
 
         data = self.db.get_idea(idea_id)
@@ -490,28 +490,15 @@ class MainWindow(QWidget):
             self._show_tooltip('⚠️ 数据不存在', 1500)
             return
 
-        tags = self.db.get_tags(idea_id)
-        content = f"""{'='*60}
-📌 标题：{data[1]}
-{'='*60}
-🏷️ 标签：{', '.join(tags) if tags else '无'}
-🎨 颜色：{data[3]}
-📅 创建时间：{data[6]}
-🔄 更新时间：{data[7]}
-{'⭐ 已收藏' if data[5] else ''}
-{'📌 已置顶' if data[4] else ''}
-{'-'*60}
-📝 内容：
-{'-'*60}
-{data[2] if data[2] else '（无内容）'}
-{'='*60}"""
+        # 直接提取笔记的全部正文内容
+        content_to_copy = data[2] if data[2] else ""
+        QApplication.clipboard().setText(content_to_copy)
 
-        QApplication.clipboard().setText(content)
+        # 更新提示信息，显示正文预览
+        preview = content_to_copy.replace('\n', ' ')[:40] + ('...' if len(content_to_copy) > 40 else '')
+        self._show_tooltip(f'✅ 内容已提取到剪贴板\n\n📋 {preview}', 2500)
 
-        preview = data[1][:30] + ('...' if len(data[1]) > 30 else '')
-        self._show_tooltip(f'✅ 已提取到剪贴板\n\n📋 {preview}', 2500)
-
-        print(f"[DEBUG] 内容已复制到剪贴板，标题={data[1][:20]}...")
+        print(f"[DEBUG] 纯文本内容已复制到剪贴板: {preview}...")
 
     def _extract_all(self):
         data = self.db.get_ideas('', 'all', None)
