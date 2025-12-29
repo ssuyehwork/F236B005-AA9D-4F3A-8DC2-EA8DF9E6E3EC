@@ -24,6 +24,7 @@ class MainWindow(QWidget):
         self.selected_id = None
         self._drag_pos = None
         self.current_tag_filter = None
+        self.copied_tags = None
         
         self.setWindowFlags(Qt.FramelessWindowHint)
         self._setup_ui()
@@ -70,6 +71,8 @@ class MainWindow(QWidget):
         main_layout.addWidget(splitter)
         outer_layout.addWidget(main_content)
         
+        QShortcut(QKeySequence("Ctrl+Shift+V"), self, self._handle_paste_tags)
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self._handle_copy_tags)
         QShortcut(QKeySequence("Ctrl+T"), self, self._handle_extract_key)
         QShortcut(QKeySequence("Ctrl+N"), self, self.new_idea)
         QShortcut(QKeySequence("Delete"), self, self._handle_del_key)
@@ -531,6 +534,31 @@ class MainWindow(QWidget):
             self._extract_single(self.selected_id)
         else:
             self._show_tooltip('⚠️ 请先选择一条笔记', 1500)
+
+    def _handle_copy_tags(self):
+        """处理 Ctrl+Shift+C 快捷键，复制选中笔记的标签"""
+        if self.selected_id:
+            tags = self.db.get_tags(self.selected_id)
+            if tags:
+                self.copied_tags = tags
+                self._show_tooltip(f'✅ 已复制 {len(tags)} 个标签', 2000)
+            else:
+                self._show_tooltip('ℹ️ 当前笔记没有标签', 1500)
+        else:
+            self._show_tooltip('⚠️ 请先选择一条笔记', 1500)
+
+    def _handle_paste_tags(self):
+        """处理 Ctrl+Shift+V 快捷键，粘贴标签到选中笔记"""
+        if self.selected_id:
+            if self.copied_tags is not None:
+                # 直接调用 _update_tags 来处理标签的更新
+                self.db._update_tags(self.selected_id, self.copied_tags)
+                self._refresh_all()  # 刷新界面以显示更改
+                self._show_tooltip(f'✅ 已粘贴 {len(self.copied_tags)} 个标签', 2000)
+            else:
+                self._show_tooltip('ℹ️ 剪贴板中没有标签', 1500)
+        else:
+            self._show_tooltip('⚠️ 请先选择一条要粘贴的目标笔记', 1500)
 
     def show_main_window(self):
         self.show()
