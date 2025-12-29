@@ -21,32 +21,13 @@ COLORS = {
 STYLES = {
     # === 主窗口结构 ===
     'main_window': f"""
-        QWidget {{
-            background-color: {COLORS['bg_dark']};
-            color: {COLORS['text']};
-            font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-        }}
-        QSplitter::handle {{
-            background-color: {COLORS['bg_light']};
-        }}
+        QWidget {{ background-color: {COLORS['bg_dark']}; color: {COLORS['text']}; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }}
+        QSplitter::handle {{ background-color: {COLORS['bg_light']}; }}
         /* 滚动条美化 */
-        QScrollBar:vertical {{
-            border: none;
-            background: {COLORS['bg_dark']};
-            width: 10px;
-            margin: 0;
-        }}
-        QScrollBar::handle:vertical {{
-            background: #444;
-            min-height: 20px;
-            border-radius: 5px;
-        }}
-        QScrollBar::handle:vertical:hover {{
-            background: #555;
-        }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-            height: 0;
-        }}
+        QScrollBar:vertical {{ border: none; background: {COLORS['bg_dark']}; width: 10px; margin: 0; }}
+        QScrollBar::handle:vertical {{ background: #444; min-height: 20px; border-radius: 5px; }}
+        QScrollBar::handle:vertical:hover {{ background: #555; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
     """,
 
     # === 侧边栏 ===
@@ -65,21 +46,13 @@ STYLES = {
             border-radius: 4px;
             margin-bottom: 2px;
         }}
-        QTreeWidget::item:hover {{
-            background-color: #2a2d2e;
-        }}
-        QTreeWidget::item:selected {{
-            background-color: #37373d;
-            color: white;
-        }}
+        QTreeWidget::item:hover {{ background-color: #2a2d2e; }}
+        QTreeWidget::item:selected {{ background-color: #37373d; color: white; }}
     """,
 
     # === 弹窗通用样式 ===
     'dialog': f"""
-        QDialog {{
-            background-color: {COLORS['bg_dark']};
-            color: {COLORS['text']};
-        }}
+        QDialog {{ background-color: {COLORS['bg_dark']}; color: {COLORS['text']}; }}
         QLabel {{
             color: {COLORS['text_sub']};
             font-size: 12px;
@@ -99,9 +72,7 @@ STYLES = {
             border: 1px solid {COLORS['primary']};
             background-color: #2a2a2a;
         }}
-        QComboBox {{
-            padding-right: 20px;
-        }}
+        QComboBox {{ padding-right: 20px; }}
         QComboBox::drop-down {{
             subcontrol-origin: padding;
             subcontrol-position: top right;
@@ -139,12 +110,8 @@ STYLES = {
             font-weight: bold;
             font-size: 13px;
         }}
-        QPushButton:hover {{
-            background-color: #357abd;
-        }}
-        QPushButton:pressed {{
-            background-color: #2a5d8f;
-        }}
+        QPushButton:hover {{ background-color: #357abd; }}
+        QPushButton:pressed {{ background-color: #2a5d8f; }}
     """,
 
     'btn_icon': f"""
@@ -155,18 +122,9 @@ STYLES = {
             min-width: 32px;
             min-height: 32px;
         }}
-        QPushButton:hover {{
-            background-color: {COLORS['primary']};
-            border-color: {COLORS['primary']};
-        }}
-        QPushButton:pressed {{
-            background-color: #2a5d8f;
-        }}
-        QPushButton:disabled {{
-            background-color: #252526;
-            color: #555;
-            border-color: #333;
-        }}
+        QPushButton:hover {{ background-color: {COLORS['primary']}; border-color: {COLORS['primary']}; }}
+        QPushButton:pressed {{ background-color: #2a5d8f; }}
+        QPushButton:disabled {{ background-color: #252526; color: #555; border-color: #333; }}
     """,
 
     'input': f"""
@@ -178,9 +136,7 @@ STYLES = {
             color: #eee;
             font-size: 13px;
         }}
-        QLineEdit:focus {{
-            border: 1px solid {COLORS['primary']};
-        }}
+        QLineEdit:focus {{ border: 1px solid {COLORS['primary']}; }}
         QLineEdit::clear-button {{
             background: transparent;
             border-radius: 9px;
