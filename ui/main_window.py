@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLine
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QKeySequence, QCursor
 from core.config import STYLES, COLORS
+from core.settings import load_setting
 from data.db_manager import DatabaseManager
 from services.backup_service import BackupService
 from ui.sidebar import Sidebar
@@ -30,8 +31,16 @@ class MainWindow(QWidget):
         self._load_data()
         
         self.ball = FloatingBall(self)
-        g = QApplication.desktop().screenGeometry()
-        self.ball.move(g.width()-80, g.height()//2)
+
+        # 加载悬浮球位置
+        ball_pos = load_setting('floating_ball_pos')
+        if ball_pos and isinstance(ball_pos, dict) and 'x' in ball_pos and 'y' in ball_pos:
+            self.ball.move(ball_pos['x'], ball_pos['y'])
+        else:
+            # 如果没有保存的位置，则使用默认位置
+            g = QApplication.desktop().screenGeometry()
+            self.ball.move(g.width()-80, g.height()//2)
+
         self.ball.show()
         print("[DEBUG] MainWindow 初始化完成")
 
