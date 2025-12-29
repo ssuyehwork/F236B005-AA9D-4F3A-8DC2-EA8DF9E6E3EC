@@ -576,9 +576,11 @@ class QuickWindow(QWidget):
         self._update_partition_status_display()
 
     def _toggle_partition_panel(self):
-        is_hidden = not self.partition_tree.isVisible()
-        self.partition_tree.setVisible(not is_hidden)
-        self.settings.setValue("partition_panel_hidden", is_hidden)
+        # 正确的逻辑：直接切换当前状态
+        is_currently_visible = self.partition_tree.isVisible()
+        self.partition_tree.setVisible(not is_currently_visible)
+        # 保存的是“隐藏”状态，所以要取反
+        self.settings.setValue("partition_panel_hidden", not is_currently_visible)
         self._update_partition_status_display()
 
     def _toggle_stay_on_top(self):
