@@ -4,7 +4,7 @@ import sys
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLineEdit,
                                QPushButton, QLabel, QScrollArea, QShortcut, QMessageBox,
                                QApplication, QToolTip, QMenu, QFrame, QTextEdit, QDialog)
-from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QKeySequence, QCursor
 from core.config import STYLES, COLORS
 from core.settings import load_setting
@@ -17,8 +17,6 @@ from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 
 class MainWindow(QWidget):
-    closing = pyqtSignal()
-
     def __init__(self):
         super().__init__()
         print("[DEBUG] ========== MainWindow 初始化开始 ==========")
@@ -32,10 +30,22 @@ class MainWindow(QWidget):
         self._setup_ui()
         self._load_data()
         
+        self.ball = FloatingBall(self)
+
+        # 加载悬浮球位置
+        ball_pos = load_setting('floating_ball_pos')
+        if ball_pos and isinstance(ball_pos, dict) and 'x' in ball_pos and 'y' in ball_pos:
+            self.ball.move(ball_pos['x'], ball_pos['y'])
+        else:
+            # 如果没有保存的位置，则使用默认位置
+            g = QApplication.desktop().screenGeometry()
+            self.ball.move(g.width()-80, g.height()//2)
+
+        self.ball.show()
         print("[DEBUG] MainWindow 初始化完成")
 
     def _setup_ui(self):
-        self.setWindowTitle('快速笔记 - 管理面板')
+        self.setWindowTitle('RapidNotes Pro')
         self.resize(1300, 700)
         self.setStyleSheet(STYLES['main_window'])
         
@@ -83,7 +93,7 @@ class MainWindow(QWidget):
         layout.setContentsMargins(15, 0, 10, 0)
         layout.setSpacing(6)
         
-        title = QLabel('💡 快速笔记')
+        title = QLabel('💡 RapidNotes Pro')
         title.setStyleSheet("font-size: 13px; font-weight: bold; color: #4a90e2;")
         layout.addWidget(title)
         
@@ -540,10 +550,7 @@ class MainWindow(QWidget):
         BackupService.run_backup()
         QApplication.quit()
 
-    def closeEvent(self, event):
-        """
-        重写关闭事件，使其发出 closing 信号而不是直接关闭。
-        """
-        self.closing.emit()
+    def closeEvent(self, e):
+        BackupService.run_backup()
         self.hide()
-        event.ignore()
+        e.ignore()
