@@ -193,8 +193,8 @@ class DatabaseManager:
         c.execute('SELECT * FROM categories ORDER BY name')
         return c.fetchall()
 
-    def add_category(self, name):
-        self.conn.cursor().execute('INSERT INTO categories (name) VALUES (?)', (name,))
+    def add_category(self, name, parent_id=None):
+        self.conn.cursor().execute('INSERT INTO categories (name, parent_id) VALUES (?, ?)', (name, parent_id))
         self.conn.commit()
 
     def rename_category(self, cat_id, new_name):
