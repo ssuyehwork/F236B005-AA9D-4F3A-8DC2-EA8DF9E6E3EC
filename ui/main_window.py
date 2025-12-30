@@ -18,6 +18,7 @@ from ui.advanced_tag_selector import AdvancedTagSelector
 
 class MainWindow(QWidget):
     closing = pyqtSignal()
+    RESIZE_MARGIN = 18
 
     def __init__(self):
         super().__init__()
@@ -25,11 +26,16 @@ class MainWindow(QWidget):
         self.db = DatabaseManager()
         self.curr_filter = ('all', None)
         self.selected_id = None
-        self._drag_pos = None
         self.current_tag_filter = None
         self.open_dialogs = []
+
+        # --- for window dragging & resizing ---
+        self.m_drag = False
+        self.m_DragPosition = QPoint()
+        self.resize_area = None
         
         self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setMouseTracking(True)
         self._setup_ui()
         self._load_data()
         
@@ -263,18 +269,76 @@ class MainWindow(QWidget):
         self._load_data()
         self._refresh_tag_panel()
 
-    def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton and e.y() < 40:
-            self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
-            e.accept()
+    # --- Custom Window Resizing Logic ---
 
-    def mouseMoveEvent(self, e):
-        if e.buttons() == Qt.LeftButton and self._drag_pos:
-            self.move(e.globalPos() - self._drag_pos)
-            e.accept()
+    def _get_resize_area(self, pos):
+        x, y = pos.x(), pos.y()
+        w, h = self.width(), self.height()
+        m = self.RESIZE_MARGIN
+        areas = []
+        if x < m: areas.append('left')
+        elif x > w - m: areas.append('right')
+        if y < m: areas.append('top')
+        elif y > h - m: areas.append('bottom')
+        return areas
 
-    def mouseReleaseEvent(self, e):
-        self._drag_pos = None
+    def _set_cursor_shape(self, areas):
+        if not areas: self.setCursor(Qt.ArrowCursor); return
+        if 'left' in areas and 'top' in areas: self.setCursor(Qt.SizeFDiagCursor)
+        elif 'right' in areas and 'bottom' in areas: self.setCursor(Qt.SizeFDiagCursor)
+        elif 'left' in areas and 'bottom' in areas: self.setCursor(Qt.SizeBDiagCursor)
+        elif 'right' in areas and 'top' in areas: self.setCursor(Qt.SizeBDiagCursor)
+        elif 'left' in areas or 'right' in areas: self.setCursor(Qt.SizeHorCursor)
+        elif 'top' in areas or 'bottom' in areas: self.setCursor(Qt.SizeVerCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            areas = self._get_resize_area(event.pos())
+            # 仅在标题栏区域（且不在边缘）才允许拖动
+            is_title_bar = event.y() < 40
+
+            if areas:
+                self.resize_area = areas
+                self.m_drag = False
+            elif is_title_bar:
+                self.resize_area = None
+                self.m_drag = True
+                self.m_DragPosition = event.globalPos() - self.pos()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.NoButton:
+            areas = self._get_resize_area(event.pos())
+            self._set_cursor_shape(areas)
+            event.accept()
+            return
+
+        if event.buttons() == Qt.LeftButton:
+            if self.resize_area:
+                global_pos = event.globalPos()
+                rect = self.geometry()
+                if 'left' in self.resize_area:
+                    new_w = rect.right() - global_pos.x()
+                    if new_w > 100: rect.setLeft(global_pos.x())
+                elif 'right' in self.resize_area:
+                    new_w = global_pos.x() - rect.left()
+                    if new_w > 100: rect.setWidth(new_w)
+                if 'top' in self.resize_area:
+                    new_h = rect.bottom() - global_pos.y()
+                    if new_h > 100: rect.setTop(global_pos.y())
+                elif 'bottom' in self.resize_area:
+                    new_h = global_pos.y() - rect.top()
+                    if new_h > 100: rect.setHeight(new_h)
+                self.setGeometry(rect)
+                event.accept()
+            elif self.m_drag:
+                self.move(event.globalPos() - self.m_DragPosition)
+                event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self.m_drag = False
+        self.resize_area = None
+        self.setCursor(Qt.ArrowCursor)
 
     def mouseDoubleClickEvent(self, e):
         if e.y() < 40: self._toggle_maximize()
