@@ -186,24 +186,26 @@ class Sidebar(QTreeWidget):
         if data: self.filter_changed.emit(*data)
 
     def _show_menu(self, pos):
+        item = self.itemAt(pos)
         menu = QMenu(self)
         menu.setStyleSheet("background:#2d2d2d;color:white")
-        item = self.itemAt(pos)
-        
-        is_category = item and item.data(0, Qt.UserRole) and item.data(0, Qt.UserRole)[0] == 'category'
-        
-        menu.addAction('➕ 组', self._new_group)
-        
-        if is_category:
-            cat_id = item.data(0, Qt.UserRole)[1]
-            raw_text = item.text(0)
-            # 改进名称提取的鲁棒性
-            current_name = ' '.join(raw_text.split(' ')[:-1])[2:]
-            
-            menu.addAction('➕ 区', lambda: self._new_zone(cat_id))
-            menu.addSeparator()
-            menu.addAction('✏️ 重命名', lambda: self._rename_category(cat_id, current_name))
-            menu.addAction('🗑️ 删除', lambda: self._del_category(cat_id))
+
+        # 默认总是可以添加组
+        menu.addAction('➕ 新建组', self._new_group)
+
+        # 只有当右键点击的是一个用户创建的分类时，才显示更多选项
+        if item and item.data(0, Qt.UserRole):
+            data = item.data(0, Qt.UserRole)
+            if data and data[0] == 'category':
+                cat_id = data[1]
+                raw_text = item.text(0)
+                # 名称提取 (去除图标和计数)
+                current_name = ' '.join(raw_text.split(' ')[:-1]).strip()[2:]
+
+                menu.addSeparator()
+                menu.addAction('➕ 新建区 (子分类)', lambda: self._new_zone(cat_id))
+                menu.addAction('✏️ 重命名', lambda: self._rename_category(cat_id, current_name))
+                menu.addAction('🗑️ 删除', lambda: self._del_category(cat_id))
 
         menu.exec_(self.mapToGlobal(pos))
 
