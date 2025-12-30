@@ -309,20 +309,23 @@ class DatabaseManager:
 
         return counts
 
-    def save_category_order(self, order_list):
+    def save_category_order(self, update_list):
         """
-        保存分类的新顺序。
-        :param order_list: 一个元组列表,每个元组为 (category_id, new_sort_order)
+        保存分类的新顺序和父子关系。
+        :param update_list: 一个字典列表,每个字典包含 'id', 'sort_order', 'parent_id'
         """
         c = self.conn.cursor()
         try:
             c.execute("BEGIN TRANSACTION")
-            for cat_id, order in order_list:
-                c.execute("UPDATE categories SET sort_order = ? WHERE id = ?", (order, cat_id))
+            for item in update_list:
+                c.execute(
+                    "UPDATE categories SET sort_order = ?, parent_id = ? WHERE id = ?",
+                    (item['sort_order'], item['parent_id'], item['id'])
+                )
             c.execute("COMMIT")
-            print(f"[DEBUG] 分类顺序已保存: {order_list}")
+            print(f"[DEBUG] 分类结构已保存: {update_list}")
         except Exception as e:
             c.execute("ROLLBACK")
-            print(f"[ERROR] 保存分类顺序失败: {e}")
+            print(f"[ERROR] 保存分类结构失败: {e}")
         finally:
             self.conn.commit()

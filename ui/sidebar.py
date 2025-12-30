@@ -161,24 +161,25 @@ class Sidebar(QTreeWidget):
 
 
     def _save_current_order(self):
-        """遍历TreeWidget，保存所有自定义分类的顺序"""
-        order_list = []
+        """遍历TreeWidget，保存所有自定义分类的顺序和父子关系"""
+        update_list = []
 
-        def iterate_items(parent_item):
+        def iterate_items(parent_item, parent_id):
             for i in range(parent_item.childCount()):
                 item = parent_item.child(i)
                 data = item.data(0, Qt.UserRole)
                 if data and data[0] == 'category':
                     cat_id = data[1]
-                    order_list.append((cat_id, i))
+                    # 记录ID、新顺序和新的父ID
+                    update_list.append({'id': cat_id, 'sort_order': i, 'parent_id': parent_id})
                     if item.childCount() > 0:
-                        iterate_items(item)
+                        iterate_items(item, cat_id) # 递归，传入当前项的ID作为父ID
 
-        # 从 invisibleRootItem 开始遍历，以捕获所有层级的分类
-        iterate_items(self.invisibleRootItem())
+        # 从 invisibleRootItem 开始遍历，其父ID为 None
+        iterate_items(self.invisibleRootItem(), None)
 
-        if order_list:
-            self.db.save_category_order(order_list)
+        if update_list:
+            self.db.save_category_order(update_list)
 
     def _on_click(self, item):
         data = item.data(0, Qt.UserRole)
