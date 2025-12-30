@@ -326,7 +326,9 @@ class QuickWindow(QWidget):
         self.splitter.setSizes([550, 150])
 
         content_layout.addWidget(self.splitter)
-        self.main_layout.addWidget(content_widget)
+
+        # 核心修复：让 content_widget (包含列表和分割器) 占据所有可用空间
+        self.main_layout.addWidget(content_widget, 1)
 
         # --- Status Bar ---
         self.partition_status_label = QLabel("当前分区: 全部数据")
