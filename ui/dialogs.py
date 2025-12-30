@@ -59,15 +59,20 @@ class BaseDialog(QDialog):
 
 # === 编辑窗口 (支持左右拉伸 & 深色滚动条) ===
 class EditDialog(BaseDialog):
-    def __init__(self, db, idea_id=None, parent=None):
+    def __init__(self, db, idea_id=None, category_id=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.idea_id = idea_id
         self.selected_color = COLORS['primary']
-        self.category_id = None
+        # 优先使用传入的 category_id
+        self.category_id = category_id
         
         self._init_ui()
-        if idea_id: self._load_data()
+        if idea_id:
+            self._load_data()
+        elif category_id:
+            # 如果是新建模式且传入了 category_id，则保存它
+            self.category_id = category_id
 
     def _init_ui(self):
         self.setWindowTitle('✨ 记录灵感')

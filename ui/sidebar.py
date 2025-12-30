@@ -8,6 +8,7 @@ from core.config import COLORS
 class Sidebar(QTreeWidget):
     filter_changed = pyqtSignal(str, object)
     data_changed = pyqtSignal()
+    new_idea_in_category = pyqtSignal(int)
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -135,6 +136,8 @@ class Sidebar(QTreeWidget):
             cat_id = item.data(0, Qt.UserRole)[1]
             raw_text = item.text(0)
             current_name = raw_text.split(' (')[0].replace('📂 ', '')
+            menu.addAction('➕ 新建数据', lambda: self.new_idea_in_category.emit(cat_id))
+            menu.addSeparator()
             menu.addAction('✏️ 重命名', lambda: self._rename_category(cat_id, current_name))
             menu.addAction('🗑️ 删除文件夹', lambda: self._del_category(cat_id))
         menu.exec_(self.mapToGlobal(pos))

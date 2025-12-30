@@ -54,6 +54,7 @@ class MainWindow(QWidget):
         self.sidebar = Sidebar(self.db)
         self.sidebar.filter_changed.connect(self._set_filter)
         self.sidebar.data_changed.connect(self._load_data)
+        self.sidebar.new_idea_in_category.connect(self._new_idea_in_category)
         splitter.addWidget(self.sidebar)
         
         middle_panel = self._create_middle_panel()
@@ -444,6 +445,9 @@ class MainWindow(QWidget):
     def new_idea(self):
         print("[DEBUG] new_idea 被调用")
         if EditDialog(self.db).exec_(): self._refresh_all()
+
+    def _new_idea_in_category(self, cat_id):
+        if EditDialog(self.db, category_id=cat_id).exec_(): self._refresh_all()
 
     def _do_edit(self):
         print(f"[DEBUG] ========== _do_edit 被调用 ========== selected_id={self.selected_id}")
