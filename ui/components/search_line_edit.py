@@ -2,7 +2,7 @@
 # ui/components/search_line_edit.py
 
 from PyQt5.QtWidgets import (QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-                               QHBoxLayout, QWidget, QDialog, QVBoxLayout)
+                               QHBoxLayout, QWidget, QDialog, QVBoxLayout, QLabel)
 from PyQt5.QtCore import Qt, QSettings, QPoint
 from PyQt5.QtGui import QColor, QPalette
 
@@ -122,12 +122,11 @@ class SearchLineEdit(QLineEdit):
         """
         widget = QWidget(parent)
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(8, 2, 5, 2)
+        layout.setContentsMargins(8, 0, 5, 0)
         layout.setSpacing(10)
 
-        label = QLineEdit(text)
-        label.setReadOnly(True)
-        label.setStyleSheet("border: none; background: transparent; color: #E0E0E0; padding-left: 0px;")
+        label = QLabel(text)
+        label.setStyleSheet("border: none; background: transparent; color: #E0E0E0;")
 
         del_button = QPushButton("✕")
         del_button.setFixedSize(20, 20)
@@ -161,7 +160,7 @@ class SearchLineEdit(QLineEdit):
         # 从自定义控件中获取文本
         widget = self.history_popup.findChild(QListWidget).itemWidget(item)
         if widget:
-            text = widget.findChild(QLineEdit).text()
+            text = widget.findChild(QLabel).text()
             self.setText(text)
             self.history_popup.close()
             self.returnPressed.emit() # 模拟回车，触发搜索
