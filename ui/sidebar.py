@@ -85,11 +85,31 @@ class Sidebar(QTreeWidget):
         self.setItemWidget(sep_item, 0, line_frame)
 
 
-        # 3. 动态分类 (文件夹)
-        for cat in self.db.get_categories():
-            count = counts['categories'].get(cat[0], 0)
-            item = QTreeWidgetItem(self, [f"📂 {cat[1]} ({count})"])
-            item.setData(0, Qt.UserRole, ('category', cat[0]))
+        # 3. 动态分类（组/区）
+        partitions_tree = self.db.get_partitions_tree()
+        self._add_partition_items(partitions_tree, root, counts.get('categories', {}))
+
+    def _add_partition_items(self, partitions, parent_item, counts):
+        for part in partitions:
+            count = counts.get(part.id, 0)
+
+            # 创建条目
+            display_text = f"{part.name} ({count})"
+            if part.parent_id is None: # 这是一个“组”
+                 item = QTreeWidgetItem(parent_item, [display_text])
+                 font = item.font(0)
+                 font.setBold(True)
+                 item.setFont(0, font)
+                 # 组本身不可交互，仅作为分类头
+                 item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
+            else: # 这是一个“区”
+                item = QTreeWidgetItem(parent_item, [f"📂 {display_text}"])
+                item.setData(0, Qt.UserRole, ('category', part.id))
+
+            # 递归添加子项
+            if part.children:
+                self._add_partition_items(part.children, item, counts)
+
 
     # --- 其余逻辑保持不变 ---
     def dragEnterEvent(self, e):
