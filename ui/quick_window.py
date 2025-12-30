@@ -228,7 +228,7 @@ class QuickWindow(QWidget):
         self.root_layout.addWidget(self.container)
         
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
+        shadow.setBlurRadius(10)
         shadow.setColor(QColor(0, 0, 0, 160))
         self.container.setGraphicsEffect(shadow)
         

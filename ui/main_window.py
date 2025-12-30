@@ -3,9 +3,9 @@
 import sys
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLineEdit,
                                QPushButton, QLabel, QScrollArea, QShortcut, QMessageBox,
-                               QApplication, QToolTip, QMenu, QFrame, QTextEdit, QDialog)
+                               QApplication, QToolTip, QMenu, QFrame, QTextEdit, QDialog, QGraphicsDropShadowEffect)
 from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal
-from PyQt5.QtGui import QKeySequence, QCursor
+from PyQt5.QtGui import QKeySequence, QCursor, QColor
 from core.config import STYLES, COLORS
 from core.settings import load_setting
 from data.db_manager import DatabaseManager
@@ -35,6 +35,7 @@ class MainWindow(QWidget):
         self.resize_area = None
         
         self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMouseTracking(True)
         self._setup_ui()
         self._load_data()
@@ -45,38 +46,58 @@ class MainWindow(QWidget):
         self.setWindowTitle('数据管理')
         self.resize(1300, 700)
         self.setStyleSheet(STYLES['main_window'])
-        
-        outer_layout = QVBoxLayout(self)
-        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.root_layout = QVBoxLayout(self)
+        self.root_layout.setContentsMargins(10, 10, 10, 10) # 为阴影效果留出空间
+        self.root_layout.setSpacing(0)
+
+        self.container = QWidget()
+        self.container.setObjectName("Container")
+        # 更新样式以匹配 QuickWindow 的容器
+        self.container.setStyleSheet(f"""
+            QWidget#Container {{
+                background-color: {COLORS['bg_dark']};
+                border-radius: 8px;
+            }}
+        """)
+        self.root_layout.addWidget(self.container)
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(10)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        self.container.setGraphicsEffect(shadow)
+
+        outer_layout = QVBoxLayout(self.container)
+        outer_layout.setContentsMargins(0, 0, 0, 0) # 容器内部不需要边距
         outer_layout.setSpacing(0)
-        
+
         titlebar = self._create_titlebar()
         outer_layout.addWidget(titlebar)
-        
+
         main_content = QWidget()
         main_layout = QHBoxLayout(main_content)
         main_layout.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter(Qt.Horizontal)
-        
+
         self.sidebar = Sidebar(self.db)
         self.sidebar.filter_changed.connect(self._set_filter)
         self.sidebar.data_changed.connect(self._load_data)
         self.sidebar.new_idea_in_category.connect(self._new_idea_in_category)
         splitter.addWidget(self.sidebar)
-        
+
         middle_panel = self._create_middle_panel()
         splitter.addWidget(middle_panel)
-        
+
         self.tag_panel = self._create_tag_panel()
         splitter.addWidget(self.tag_panel)
-        
+
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 4)
         splitter.setStretchFactor(2, 1)
-        
+
         main_layout.addWidget(splitter)
         outer_layout.addWidget(main_content)
-        
+
         QShortcut(QKeySequence("Ctrl+T"), self, self._handle_extract_key)
         QShortcut(QKeySequence("Ctrl+N"), self, self.new_idea)
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
