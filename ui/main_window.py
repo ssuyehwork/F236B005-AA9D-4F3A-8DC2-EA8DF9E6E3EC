@@ -17,6 +17,15 @@ from ui.dialogs import EditDialog
 from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 
+class ContentContainer(QWidget):
+    cleared = pyqtSignal()
+
+    def mousePressEvent(self, e):
+        # 当点击事件发生在自身，而不是子控件(卡片)上时，发射信号
+        if self.childAt(e.pos()) is None:
+            self.cleared.emit()
+        super().mousePressEvent(e)
+
 class MainWindow(QWidget):
     closing = pyqtSignal()
     
@@ -103,6 +112,8 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+N"), self, self.new_idea)
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
         QShortcut(QKeySequence("Ctrl+A"), self, self._select_all)
+        QShortcut(QKeySequence("Ctrl+F"), self, self._do_fav)
+        QShortcut(QKeySequence("Ctrl+P"), self, self._do_pin)
         QShortcut(QKeySequence("Delete"), self, self._handle_del_key)
         QShortcut(QKeySequence("Escape"), self, self._clear_tag_filter)
 
@@ -115,6 +126,14 @@ class MainWindow(QWidget):
         else:
             self.selected_ids = set(self.cards.keys())
 
+        self._update_all_card_selections()
+        self._update_ui_state()
+
+    def _clear_all_selections(self):
+        """清除所有选中项"""
+        if not self.selected_ids:
+            return
+        self.selected_ids.clear()
         self._update_all_card_selections()
         self._update_ui_state()
 
@@ -195,10 +214,15 @@ class MainWindow(QWidget):
         act_bar.addStretch()
         
         self.btns = {}
+        tooltips = {
+            'pin': '置顶 (Ctrl+P)', 'fav': '收藏 (Ctrl+F)', 'edit': '编辑',
+            'del': '删除 (Delete)', 'rest': '恢复', 'dest': '永久删除'
+        }
         for k, i, f in [('pin','📌',self._do_pin), ('fav','⭐',self._do_fav), ('edit','✏️',self._do_edit),
                         ('del','🗑️',self._do_del), ('rest','♻️',self._do_restore), ('dest','❌',self._do_destroy)]:
             b = QPushButton(i)
             b.setStyleSheet(STYLES['btn_icon'])
+            b.setToolTip(tooltips.get(k, ''))
             b.clicked.connect(f)
             b.setEnabled(False)
             act_bar.addWidget(b)
@@ -208,7 +232,8 @@ class MainWindow(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("border:none")
-        self.list_container = QWidget()
+        self.list_container = ContentContainer()
+        self.list_container.cleared.connect(self._clear_all_selections)
         self.list_layout = QVBoxLayout(self.list_container)
         self.list_layout.setAlignment(Qt.AlignTop)
         self.list_layout.setSpacing(10)
