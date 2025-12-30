@@ -122,12 +122,12 @@ class SearchLineEdit(QLineEdit):
         """
         widget = QWidget(parent)
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(5, 2, 5, 2)
+        layout.setContentsMargins(8, 2, 5, 2)
         layout.setSpacing(10)
 
         label = QLineEdit(text)
         label.setReadOnly(True)
-        label.setStyleSheet("border: none; background: transparent; color: #E0E0E0;")
+        label.setStyleSheet("border: none; background: transparent; color: #E0E0E0; padding-left: 0px;")
 
         del_button = QPushButton("✕")
         del_button.setFixedSize(20, 20)
