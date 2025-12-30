@@ -17,7 +17,7 @@ class SearchLineEdit(QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.history_popup = None
-        self.settings = QSettings()
+        self.settings = QSettings("KMain_V3", "KMain_V3")
 
     def mouseDoubleClickEvent(self, event):
         """
