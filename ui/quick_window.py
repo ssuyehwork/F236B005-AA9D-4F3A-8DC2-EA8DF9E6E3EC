@@ -87,19 +87,19 @@ except ImportError:
 # =================================================================================
 DARK_STYLESHEET = """
 QWidget#Container {
-    background-color: #2E2E2E;
-    border: 1px solid #444; 
+    background-color: #1e1e1e;
+    border: 1px solid #333333;
     border-radius: 8px;    
 }
 QWidget {
-    color: #F0F0F0;
+    color: #cccccc;
     font-family: "Microsoft YaHei", "Segoe UI Emoji";
     font-size: 14px;
 }
 
 /* 标题栏文字样式 */
 QLabel#TitleLabel {
-    color: #AAAAAA;
+    color: #858585;
     font-weight: bold;
     font-size: 15px;
     padding-left: 5px;
@@ -107,22 +107,22 @@ QLabel#TitleLabel {
 
 QListWidget, QTreeWidget {
     border: none;
-    background-color: #2E2E2E;
-    alternate-background-color: #383838;
+    background-color: #1e1e1e;
+    alternate-background-color: #252526;
     outline: none;
 }
 QListWidget::item { padding: 8px; border: none; }
 QListWidget::item:selected, QTreeWidget::item:selected {
-    background-color: #4D79C4; color: #FFFFFF;
+    background-color: #4a90e2; color: #FFFFFF;
 }
 QListWidget::item:hover { background-color: #444444; }
 
-QSplitter::handle { background-color: #444; width: 2px; }
-QSplitter::handle:hover { background-color: #4D79C4; }
+QSplitter::handle { background-color: #333333; width: 2px; }
+QSplitter::handle:hover { background-color: #4a90e2; }
 
 QLineEdit {
-    background-color: #3C3C3C;
-    border: 1px solid #555;
+    background-color: #252526;
+    border: 1px solid #333333;
     border-radius: 4px;
     padding: 6px;
     font-size: 16px;
@@ -239,7 +239,7 @@ class QuickWindow(QWidget):
         title_bar_layout.setContentsMargins(0, 0, 0, 0)
         title_bar_layout.setSpacing(5)
         
-        self.title_label = QLabel("快速笔记")
+        self.title_label = QLabel("⚡️ 快速笔记")
         self.title_label.setObjectName("TitleLabel")
         title_bar_layout.addWidget(self.title_label)
         
