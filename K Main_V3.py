@@ -59,8 +59,9 @@ class AppManager(QObject):
         # 3. 创建 QuickWindow (但不显示)
         self.quick_window = QuickWindow(self.db_manager)
         self.quick_window.open_main_window_requested.connect(self.show_main_window)
+        self.quick_window.new_idea_requested.connect(self.main_window.new_idea)
         # 默认启动时不显示 QuickWindow，由悬浮球唤出
-        # self.quick_window.show() 
+        self.quick_window.show()
 
     def show_quick_window(self):
         """显示快速笔记窗口"""

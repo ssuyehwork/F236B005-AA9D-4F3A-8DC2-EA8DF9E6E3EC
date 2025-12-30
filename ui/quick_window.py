@@ -151,6 +151,7 @@ QPushButton#PinButton:checked { background-color: #0078D4; color: white; border:
 class QuickWindow(QWidget):
     RESIZE_MARGIN = 18 
     open_main_window_requested = pyqtSignal()
+    new_idea_requested = pyqtSignal()
 
     def __init__(self, db_manager):
         super().__init__()
@@ -211,6 +212,7 @@ class QuickWindow(QWidget):
         self.partition_tree.currentItemChanged.connect(self._update_partition_status_display)
 
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
+        QShortcut(QKeySequence("Ctrl+N"), self, self.new_idea_requested.emit)
 
     def _init_ui(self):
         self.setWindowTitle("快速笔记")
@@ -362,6 +364,7 @@ class QuickWindow(QWidget):
         # 保存状态
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("splitter_state", self.splitter.saveState())
+        self.settings.setValue("partition_panel_hidden", self.partition_tree.isHidden())
         # 隐藏窗口而不是关闭
         self.hide()
         # 忽略事件，阻止窗口被真正销毁

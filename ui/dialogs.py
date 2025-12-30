@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGridLayout, QHBoxLayout,
                               QProgressBar, QFrame, QApplication, QMessageBox, QShortcut,
                              QSpacerItem, QSizePolicy, QSplitter, QWidget, QScrollBar)
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from core.config import STYLES, COLORS
 
 # 自定义深灰色滚动条样式
@@ -59,6 +59,8 @@ class BaseDialog(QDialog):
 
 # === 编辑窗口 (支持左右拉伸 & 深色滚动条) ===
 class EditDialog(BaseDialog):
+    saved = pyqtSignal()
+
     def __init__(self, db, idea_id=None, category_id=None, parent=None):
         super().__init__(parent)
         self.db = db
@@ -204,7 +206,8 @@ class EditDialog(BaseDialog):
         if self.idea_id: self.db.update_idea(self.idea_id, *args)
         else: self.db.add_idea(*args)
         
-        self.accept()
+        self.saved.emit()
+        self.close()
 
 # === 看板窗口 ===
 class StatsDialog(BaseDialog):

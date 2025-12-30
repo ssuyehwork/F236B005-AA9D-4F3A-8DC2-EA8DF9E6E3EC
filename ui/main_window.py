@@ -27,6 +27,7 @@ class MainWindow(QWidget):
         self.selected_id = None
         self._drag_pos = None
         self.current_tag_filter = None
+        self.open_dialogs = []
         
         self.setWindowFlags(Qt.FramelessWindowHint)
         self._setup_ui()
@@ -442,16 +443,31 @@ class MainWindow(QWidget):
         QToolTip.showText(QCursor.pos(), msg, self)
         QTimer.singleShot(dur, QToolTip.hideText)
 
+    def _show_edit_dialog(self, idea_id=None, category_id=None):
+        dialog = EditDialog(self.db, idea_id, category_id, self)
+        dialog.setAttribute(Qt.WA_DeleteOnClose)
+
+        # 将对话框实例添加到列表中，以防止被垃圾回收
+        self.open_dialogs.append(dialog)
+
+        # 当对话框关闭时，将其从列表中移除
+        dialog.finished.connect(lambda: self.open_dialogs.remove(dialog) if dialog in self.open_dialogs else None)
+        dialog.saved.connect(self._refresh_all)
+
+        dialog.show()
+        dialog.activateWindow()
+
     def new_idea(self):
         print("[DEBUG] new_idea 被调用")
-        if EditDialog(self.db).exec_(): self._refresh_all()
+        self._show_edit_dialog()
 
     def _new_idea_in_category(self, cat_id):
-        if EditDialog(self.db, category_id=cat_id).exec_(): self._refresh_all()
+        self._show_edit_dialog(category_id=cat_id)
 
     def _do_edit(self):
         print(f"[DEBUG] ========== _do_edit 被调用 ========== selected_id={self.selected_id}")
-        if self.selected_id and EditDialog(self.db, self.selected_id).exec_(): self._refresh_all()
+        if self.selected_id:
+            self._show_edit_dialog(idea_id=self.selected_id)
 
     def _do_pin(self):
         if self.selected_id:
