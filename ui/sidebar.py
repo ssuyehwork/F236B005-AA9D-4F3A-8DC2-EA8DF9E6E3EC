@@ -51,18 +51,7 @@ class Sidebar(QTreeWidget):
         self.clear()
         counts = self.db.get_counts()
 
-        # 1. 根节点 (分区组)
-        root = QTreeWidgetItem(self, ["分区组"])
-        root.setExpanded(True)
-        # Make the root item non-selectable and visually distinct as a header
-        root.setFlags(root.flags() & ~Qt.ItemIsSelectable)
-        font = root.font(0)
-        font.setBold(True)
-        root.setFont(0, font)
-        root.setForeground(0, QColor("#FFFFFF"))
-
-
-        # 2. 系统内置分类
+        # 1. 系统内置分类
         menu_items = [
             ("全部数据", 'all', '🗂️'), ("今日数据", 'today', '📅'),
             ("未分类", 'uncategorized', '⚠️'), ("未标签", 'untagged', '🏷️'),
@@ -70,40 +59,41 @@ class Sidebar(QTreeWidget):
         ]
 
         for name, key, icon in menu_items:
-            item = QTreeWidgetItem(root, [f"{icon}  {name} ({counts.get(key, 0)})"])
+            item = QTreeWidgetItem(self, [f"{icon}  {name} ({counts.get(key, 0)})"])
             item.setData(0, Qt.UserRole, (key, None))
         
-        # --- 新增：回收站下方的分割线 ---
-        sep_item = QTreeWidgetItem(root)
+        # --- 分割线 ---
+        sep_item = QTreeWidgetItem(self)
         sep_item.setFlags(Qt.NoItemFlags) # 不可选中/点击
-        sep_item.setSizeHint(0, QSize(0, 12)) # 设置较小的高度，包含线条和上下留白
+        sep_item.setSizeHint(0, QSize(0, 12))
 
         line_frame = QFrame()
         line_frame.setFixedHeight(1)
-        # 使用 bg_light 颜色，并在左右增加 margin 避免顶格，看起来更精致
         line_frame.setStyleSheet(f"background-color: {COLORS['bg_light']}; margin: 0px 8px;")
         self.setItemWidget(sep_item, 0, line_frame)
 
-
-        # 3. 动态分类（组/区）
+        # 2. 动态分类（组/区）
         partitions_tree = self.db.get_partitions_tree()
-        self._add_partition_items(partitions_tree, root, counts.get('categories', {}))
+        self._add_partition_items(partitions_tree, self, counts.get('categories', {}))
+        self.expandAll()
 
     def _add_partition_items(self, partitions, parent_item, counts):
         for part in partitions:
             count = counts.get(part.id, 0)
 
-            # 创建条目
             display_text = f"{part.name} ({count})"
+
+            # 组或区都创建为 QTreeWidgetItem
+            item = QTreeWidgetItem(parent_item, [display_text])
+
             if part.parent_id is None: # 这是一个“组”
-                 item = QTreeWidgetItem(parent_item, [display_text])
                  font = item.font(0)
                  font.setBold(True)
                  item.setFont(0, font)
                  # 组本身不可交互，仅作为分类头
                  item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
             else: # 这是一个“区”
-                item = QTreeWidgetItem(parent_item, [f"📂 {display_text}"])
+                item.setText(0, f"📂 {display_text}")
                 item.setData(0, Qt.UserRole, ('category', part.id))
 
             # 递归添加子项
