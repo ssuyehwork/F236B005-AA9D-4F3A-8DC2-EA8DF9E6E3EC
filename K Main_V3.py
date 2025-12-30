@@ -41,6 +41,7 @@ class AppManager(QObject):
         # 2. 创建并显示悬浮球
         self.ball = FloatingBall(self.main_window)
         self.ball.request_show_quick_window.connect(self.show_quick_window)
+        self.ball.double_clicked.connect(self.toggle_quick_window)
         self.ball.request_show_main_window.connect(self.show_main_window)
         self.ball.request_quit_app.connect(self.quit_application)
         
@@ -68,6 +69,14 @@ class AppManager(QObject):
                 self.quick_window.showNormal()
             self.quick_window.show()
             self.quick_window.activateWindow()
+
+    def toggle_quick_window(self):
+        """切换快速笔记窗口的显示/隐藏状态"""
+        if self.quick_window:
+            if self.quick_window.isVisible():
+                self.quick_window.hide()
+            else:
+                self.show_quick_window()
 
     def show_main_window(self):
         """创建或显示主数据管理窗口"""

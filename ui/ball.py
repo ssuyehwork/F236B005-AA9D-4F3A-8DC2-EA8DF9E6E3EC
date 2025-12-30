@@ -182,7 +182,6 @@ class FloatingBall(QWidget):
 
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.LeftButton:
-            self.request_show_quick_window.emit()
             self.double_clicked.emit()
 
     def contextMenuEvent(self, e):
