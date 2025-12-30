@@ -31,6 +31,9 @@ class FloatingBall(QWidget):
         self.rotation_speed_base = 2.0 # 基础转速
         self.current_speed = self.rotation_speed_base
         
+        # 色相，用于颜色循环
+        self.hue = 0
+
         # 粒子系统
         self.particles = [] 
 
@@ -52,7 +55,10 @@ class FloatingBall(QWidget):
         self.angle_outer %= 360
         self.angle_inner %= 360
 
-        # 3. 粒子更新
+        # 3. 更新色相
+        self.hue = (self.hue + 1) % 360
+
+        # 4. 粒子更新
         if self.is_hovering:
             self._update_particles()
             
@@ -79,16 +85,17 @@ class FloatingBall(QWidget):
 
         cx, cy = 32, 32
         
-        # === 赛博配色 (Cyber Palette) ===
+        # === 动态配色 ===
         if self.is_hovering:
-            # 高能状态: 金/橙
+            # --- 高能状态: 金/橙 ---
             main_color = QColor(255, 215, 0)      # Gold
             glow_color = QColor(255, 69, 0, 150)  # Orange Glow
             bg_color = QColor(20, 0, 0, 200)      
         else:
-            # 常态: 青/蓝
-            main_color = QColor(0, 243, 255)      # Cyan
-            glow_color = QColor(0, 120, 255, 100) # Blue Glow
+            # --- 常态: 彩虹呼吸 ---
+            # 使用 HSL/HSV 色彩模型，只改变色相 H
+            main_color = QColor.fromHsvF(self.hue / 360.0, 0.8, 1.0)
+            glow_color = QColor.fromHsvF(self.hue / 360.0, 1.0, 1.0, 0.4) # 饱和度更高，带透明度
             bg_color = QColor(0, 15, 30, 180)     
 
         # 1. 绘制核心背景
