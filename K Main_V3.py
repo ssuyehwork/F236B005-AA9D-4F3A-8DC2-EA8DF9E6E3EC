@@ -72,11 +72,13 @@ class AppManager(QObject):
             self.quick_window.activateWindow()
 
     def toggle_quick_window(self):
-        """切换快速笔记窗口的显示/隐藏状态"""
+        """切换快速笔记窗口的显示/隐藏状态，如果窗口已存在则激活"""
         if self.quick_window:
-            if self.quick_window.isVisible():
+            # 如果窗口可见且是当前活动窗口，则隐藏
+            if self.quick_window.isVisible() and self.quick_window.isActiveWindow():
                 self.quick_window.hide()
             else:
+                # 否则，显示并激活窗口
                 self.show_quick_window()
 
     def show_main_window(self):
