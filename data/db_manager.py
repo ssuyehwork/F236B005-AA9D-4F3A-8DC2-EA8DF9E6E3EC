@@ -65,9 +65,9 @@ class DatabaseManager:
         self.conn.commit()
 
     # --- 核心 CRUD ---
-    def add_idea(self, title, content, color, tags, cat_id):
+    def add_idea(self, title, content, color, tags, category_id=None):
         c = self.conn.cursor()
-        c.execute('INSERT INTO ideas (title, content, color, category_id) VALUES (?,?,?,?)', (title, content, color, cat_id))
+        c.execute('INSERT INTO ideas (title, content, color, category_id) VALUES (?,?,?,?)', (title, content, color, category_id))
         iid = c.lastrowid
         self._update_tags(iid, tags)
         self.conn.commit()

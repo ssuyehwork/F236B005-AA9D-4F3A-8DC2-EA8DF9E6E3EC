@@ -83,6 +83,7 @@ class MainWindow(QWidget):
         self.sidebar = Sidebar(self.db)
         self.sidebar.filter_changed.connect(self._set_filter)
         self.sidebar.data_changed.connect(self._load_data)
+        self.sidebar.new_data_requested.connect(self._on_new_data_in_category_requested)
         splitter.addWidget(self.sidebar)
         
         middle_panel = self._create_middle_panel()
@@ -559,6 +560,23 @@ class MainWindow(QWidget):
             if d:
                 self.btns['pin'].setText('📍' if not d[4] else '📌')
                 self.btns['fav'].setText('☆' if not d[5] else '⭐')
+
+    def _on_new_data_in_category_requested(self, cat_id):
+        """响应侧边栏请求，在指定分类下创建新笔记"""
+        print(f"[DEBUG] 请求在分类 ID={cat_id} 下创建新数据")
+        # 创建一个空的 idea，直接关联分类 ID
+        new_id = self.db.add_idea(title="新的笔记", content="", color=COLORS['note_default'], tags=[], category_id=cat_id)
+        if new_id:
+            print(f"[DEBUG] 新笔记创建成功, ID={new_id}")
+            # 刷新界面以显示新笔记
+            self._refresh_all()
+            # 选中新创建的笔记
+            self.selected_id = new_id
+            self._on_select(new_id)
+            # 立即打开编辑对话框
+            self._do_edit()
+        else:
+            print("[ERROR] 创建新笔记失败")
 
     def _show_tooltip(self, msg, dur=2000):
         QToolTip.showText(QCursor.pos(), msg, self)
