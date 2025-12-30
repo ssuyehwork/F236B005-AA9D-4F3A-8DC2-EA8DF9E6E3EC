@@ -188,7 +188,7 @@ class Sidebar(QTreeWidget):
 
         # Case 1: 点击空白处，或 "我的分区" 标题
         if not item or item.text(0) == "🗃️ 我的分区":
-            menu.addAction('➕ 新建组', self._new_group)
+            menu.addAction('➕ 组', self._new_group)
             menu.exec_(self.mapToGlobal(pos))
             return
 
@@ -199,9 +199,9 @@ class Sidebar(QTreeWidget):
             raw_text = item.text(0)
             current_name = ' '.join(raw_text.split(' ')[:-1]).strip()[2:]
 
-            menu.addAction('➕ 新建组', self._new_group)
+            menu.addAction('➕ 组', self._new_group)
             menu.addSeparator()
-            menu.addAction('➕ 新建区 (子分类)', lambda: self._new_zone(cat_id))
+            menu.addAction('➕ 区', lambda: self._new_zone(cat_id))
             menu.addAction('✏️ 重命名', lambda: self._rename_category(cat_id, current_name))
             menu.addAction('🗑️ 删除', lambda: self._del_category(cat_id))
             menu.exec_(self.mapToGlobal(pos))
