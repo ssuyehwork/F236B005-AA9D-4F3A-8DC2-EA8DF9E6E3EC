@@ -64,7 +64,6 @@ class Sidebar(QTreeWidget):
         # 2. 系统内置分类
         menu_items = [
             ("全部数据", 'all', '🗂️'), ("今日数据", 'today', '📅'),
-            ("剪贴板数据", 'clipboard', '📋'),
             ("未分类", 'uncategorized', '⚠️'), ("未标签", 'untagged', '🏷️'),
             ("收藏", 'favorite', '⭐'), ("回收站", 'trash', '🗑️')
         ]
@@ -85,24 +84,11 @@ class Sidebar(QTreeWidget):
         self.setItemWidget(sep_item, 0, line_frame)
 
 
-        # 3. 动态分类 (组和区)
-        partitions = self.db.get_partitions_tree()
-        self._add_partition_recursive(partitions, self, counts['categories'])
-        self.expandAll()
-
-    def _add_partition_recursive(self, partitions, parent_item, counts):
-        for p in partitions:
-            count = counts.get(p.id, 0)
-            # 子项也需要计入父项的总数
-            child_counts = sum(counts.get(child.id, 0) for child in p.children)
-            total_count = count + child_counts
-
-            icon = "📦" if not p.children else "🗃️"  # 更改图标以区分
-            item = QTreeWidgetItem(parent_item, [f"{icon} {p.name} ({total_count})"])
-            item.setData(0, Qt.UserRole, ('category', p.id))
-
-            if p.children:
-                self._add_partition_recursive(p.children, item, counts)
+        # 3. 动态分类 (文件夹)
+        for cat in self.db.get_categories():
+            count = counts['categories'].get(cat[0], 0)
+            item = QTreeWidgetItem(self, [f"📂 {cat[1]} ({count})"])
+            item.setData(0, Qt.UserRole, ('category', cat[0]))
 
     # --- 其余逻辑保持不变 ---
     def dragEnterEvent(self, e):
@@ -143,35 +129,20 @@ class Sidebar(QTreeWidget):
     def _show_menu(self, pos):
         menu = QMenu(self)
         menu.setStyleSheet("background:#2d2d2d;color:white")
+        menu.addAction('➕ 新建文件夹', self._new_category)
         item = self.itemAt(pos)
-
-        is_category = item and item.data(0, Qt.UserRole) and item.data(0, Qt.UserRole)[0] == 'category'
-
-        menu.addAction('➕ 新建组', self._new_group)
-
-        if is_category:
+        if item and item.data(0, Qt.UserRole) and item.data(0, Qt.UserRole)[0] == 'category':
             cat_id = item.data(0, Qt.UserRole)[1]
             raw_text = item.text(0)
-            # 改进名称提取的鲁棒性
-            current_name = ' '.join(raw_text.split(' ')[:-1])[2:]
-
-            menu.addAction('➕ 新建区', lambda: self._new_zone(cat_id))
-            menu.addSeparator()
+            current_name = raw_text.split(' (')[0].replace('📂 ', '')
             menu.addAction('✏️ 重命名', lambda: self._rename_category(cat_id, current_name))
-            menu.addAction('🗑️ 删除', lambda: self._del_category(cat_id))
-
+            menu.addAction('🗑️ 删除文件夹', lambda: self._del_category(cat_id))
         menu.exec_(self.mapToGlobal(pos))
 
-    def _new_group(self):
-        text, ok = QInputDialog.getText(self, '新建组', '组名称:')
+    def _new_category(self):
+        text, ok = QInputDialog.getText(self, '新建', '名称:')
         if ok and text:
-            self.db.add_category(text, parent_id=None)
-            self.refresh()
-
-    def _new_zone(self, parent_id):
-        text, ok = QInputDialog.getText(self, '新建区', '区名称:')
-        if ok and text:
-            self.db.add_category(text, parent_id=parent_id)
+            self.db.add_category(text)
             self.refresh()
 
     def _rename_category(self, cat_id, old_name):
@@ -181,21 +152,6 @@ class Sidebar(QTreeWidget):
             self.refresh()
 
     def _del_category(self, cid):
-        # 增加判断，看是否有子分类
-        c = self.db.conn.cursor()
-        c.execute("SELECT COUNT(*) FROM categories WHERE parent_id = ?", (cid,))
-        child_count = c.fetchone()[0]
-
-        msg = '确认删除此分类? (其中的内容将移至未分类)'
-        if child_count > 0:
-            msg = f'此组包含 {child_count} 个区，确认一并删除?\n(所有内容都将移至未分类)'
-
-        if QMessageBox.Yes == QMessageBox.question(self, '确认删除', msg):
-            # 删除子分类
-            c.execute("SELECT id FROM categories WHERE parent_id = ?", (cid,))
-            child_ids = [row[0] for row in c.fetchall()]
-            for child_id in child_ids:
-                self.db.delete_category(child_id)
-            # 删除父分类
+        if QMessageBox.yes == QMessageBox.question(self, '确认', '删除此文件夹? (内容移至未分类)'):
             self.db.delete_category(cid)
             self.refresh()
