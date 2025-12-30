@@ -10,6 +10,7 @@ from ui.quick_window import QuickWindow
 from ui.main_window import MainWindow
 from ui.ball import FloatingBall
 from data.db_manager import DatabaseManager
+from core.settings import load_setting
 
 SERVER_NAME = "K_KUAIJIBIJI_SINGLE_INSTANCE_SERVER"
 
@@ -41,6 +42,16 @@ class AppManager(QObject):
         self.ball = FloatingBall(self.main_window)
         self.ball.request_show_quick_window.connect(self.show_quick_window)
         self.ball.request_quit_app.connect(self.quit_application)
+
+        # 恢复悬浮球位置
+        ball_pos = load_setting('floating_ball_pos')
+        if ball_pos and isinstance(ball_pos, dict) and 'x' in ball_pos and 'y' in ball_pos:
+            self.ball.move(ball_pos['x'], ball_pos['y'])
+        else:
+            # 如果没有保存的位置，则使用默认位置
+            g = QApplication.desktop().screenGeometry()
+            self.ball.move(g.width()-80, g.height()//2)
+
         self.ball.show() # 悬浮球默认可见
 
         # 3. 创建 QuickWindow (但不显示)
