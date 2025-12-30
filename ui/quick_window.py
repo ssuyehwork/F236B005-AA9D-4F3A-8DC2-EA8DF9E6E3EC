@@ -492,13 +492,22 @@ class QuickWindow(QWidget):
         if self.list_widget.count() > 0: self.list_widget.setCurrentRow(0)
 
     def _get_content_display(self, item_tuple):
-        # item_tuple 格式: (id, title, content, ...)
+        # item_tuple 格式: (id, title, content, color, ..., item_type, data_blob)
         title = item_tuple[1]
         content = item_tuple[2]
         
-        # 优先显示标题，如果标题为空则显示内容
-        display_text = title if title else (content if content else "")
-        return display_text.replace('\n', ' ').replace('\r', '').strip()[:150]
+        # 字段顺序: id, title, content, color, is_pinned, is_favorite, created_at, updated_at, category_id, is_deleted, item_type, data_blob
+        item_type_index = 10
+        item_type = item_tuple[item_type_index] if len(item_tuple) > item_type_index and item_tuple[item_type_index] else 'text'
+
+        if item_type == 'image':
+            return title # 对于图片，直接显示标题 "[图片]"
+        elif item_type == 'file':
+            return title # 对于文件，显示标题 "[文件] a.txt"
+        else: # text
+            # 优先显示标题，如果标题为空则显示内容
+            display_text = title if title else (content if content else "")
+            return display_text.replace('\n', ' ').replace('\r', '').strip()[:150]
 
     def _create_color_icon(self, color_str):
         pixmap = QPixmap(16, 16)
@@ -601,13 +610,38 @@ class QuickWindow(QWidget):
     def _on_item_activated(self, item):
         item_tuple = item.data(Qt.UserRole)
         if not item_tuple: return
-        
+
         try:
             clipboard = QApplication.clipboard()
-            # 元组的第三个元素是 content
-            content_to_copy = item_tuple[2] if len(item_tuple) > 2 and item_tuple[2] else ""
-            clipboard.setText(content_to_copy)
             
+            item_type_index = 10
+            item_type = item_tuple[item_type_index] if len(item_tuple) > item_type_index and item_tuple[item_type_index] else 'text'
+
+            # 1. 处理图片
+            if item_type == 'image':
+                blob_index = 11
+                image_blob = item_tuple[blob_index]
+                if image_blob:
+                    image = QImage()
+                    image.loadFromData(image_blob)
+                    clipboard.setImage(image)
+
+            # 2. 处理文件
+            elif item_type == 'file':
+                content_index = 2
+                file_path_str = item_tuple[content_index]
+                if file_path_str:
+                    mime_data = QMimeData()
+                    urls = [QUrl.fromLocalFile(p) for p in file_path_str.split(';') if p]
+                    mime_data.setUrls(urls)
+                    clipboard.setMimeData(mime_data)
+
+            # 3. 处理文本
+            else:
+                content_index = 2
+                content_to_copy = item_tuple[content_index] if item_tuple[content_index] else ""
+                clipboard.setText(content_to_copy)
+
             self._paste_ditto_style()
         except Exception as e: 
             log(f"❌ 粘贴操作失败: {e}")
