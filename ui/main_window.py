@@ -16,6 +16,7 @@ from ui.cards import IdeaCard
 from ui.dialogs import EditDialog
 from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
+from ui.components.search_line_edit import SearchLineEdit
 
 class ContentContainer(QWidget):
     cleared = pyqtSignal()
@@ -112,7 +113,9 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+N"), self, self.new_idea)
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
         QShortcut(QKeySequence("Ctrl+A"), self, self._select_all)
-        QShortcut(QKeySequence("Ctrl+F"), self, self._do_fav)
+        QShortcut(QKeySequence("Ctrl+F"), self, self.search.setFocus)
+        QShortcut(QKeySequence("Ctrl+E"), self, self._do_fav)
+        QShortcut(QKeySequence("Ctrl+B"), self, self._do_edit)
         QShortcut(QKeySequence("Ctrl+P"), self, self._do_pin)
         QShortcut(QKeySequence("Delete"), self, self._handle_del_key)
         QShortcut(QKeySequence("Escape"), self, self._clear_tag_filter)
@@ -150,13 +153,13 @@ class MainWindow(QWidget):
         title.setStyleSheet("font-size: 13px; font-weight: bold; color: #4a90e2;")
         layout.addWidget(title)
         
-        self.search = QLineEdit()
-        self.search.setClearButtonEnabled(True)
-        self.search.setPlaceholderText('🔍 搜索灵感...')
+        self.search = SearchLineEdit()
+        self.search.setPlaceholderText('🔍 搜索灵感 (双击查看历史)')
         self.search.setFixedWidth(280)
         self.search.setFixedHeight(28)
         self.search.setStyleSheet(STYLES['input'] + "QLineEdit { border-radius: 14px; }")
         self.search.textChanged.connect(self._load_data)
+        self.search.returnPressed.connect(self._add_search_to_history)
         layout.addWidget(self.search)
         layout.addStretch()
         
@@ -215,7 +218,7 @@ class MainWindow(QWidget):
         
         self.btns = {}
         tooltips = {
-            'pin': '置顶 (Ctrl+P)', 'fav': '收藏 (Ctrl+F)', 'edit': '编辑',
+            'pin': '置顶 (Ctrl+P)', 'fav': '收藏 (Ctrl+E)', 'edit': '编辑 (Ctrl+B)',
             'del': '删除 (Delete)', 'rest': '恢复', 'dest': '永久删除'
         }
         for k, i, f in [('pin','📌',self._do_pin), ('fav','⭐',self._do_fav), ('edit','✏️',self._do_edit),
@@ -447,6 +450,12 @@ class MainWindow(QWidget):
         else:
             self.showMaximized()
             self.max_btn.setText('❐')
+
+    def _add_search_to_history(self):
+        """当用户在搜索框按回车时，将当前文本添加到历史记录。"""
+        search_text = self.search.text().strip()
+        if search_text:
+            self.search.add_history_entry(search_text)
 
     # ==================== 其余方法保持不变 ====================
     
