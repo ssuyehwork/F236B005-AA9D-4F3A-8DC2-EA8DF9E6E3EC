@@ -8,9 +8,9 @@ import datetime
 import subprocess  # <--- 新增导入，用于启动外部进程
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QListWidget, QLineEdit, 
                              QListWidgetItem, QHBoxLayout, QTreeWidget, QTreeWidgetItem, 
-                             QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, QLabel, QTreeWidgetItemIterator)
+                             QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, QLabel, QTreeWidgetItemIterator, QShortcut)
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject
-from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon
+from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon, QKeySequence
 
 # =================================================================================
 #   Win32 API 定义
@@ -209,6 +209,8 @@ class QuickWindow(QWidget):
         self._update_list()
         
         self.partition_tree.currentItemChanged.connect(self._update_partition_status_display)
+
+        QShortcut(QKeySequence("Ctrl+W"), self, self.close)
 
     def _init_ui(self):
         self.setWindowTitle("快速笔记")
@@ -682,11 +684,7 @@ class QuickWindow(QWidget):
 
     def keyPressEvent(self, event):
         key = event.key()
-        modifiers = event.modifiers()
-
-        if modifiers == Qt.ControlModifier and key == Qt.Key_W:
-            self.close()
-        elif key == Qt.Key_Escape: self.close()
+        if key == Qt.Key_Escape: self.close()
         elif key in (Qt.Key_Up, Qt.Key_Down):
             if not self.list_widget.hasFocus():
                 self.list_widget.setFocus()

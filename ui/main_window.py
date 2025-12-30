@@ -386,7 +386,7 @@ class MainWindow(QWidget):
         
         if not in_trash:
             menu.addAction('✏️ 编辑', self._do_edit)
-            menu.addAction('📋 提取到剪贴板', lambda: self._extract_single(idea_id))
+            menu.addAction('📋 提取（Ctrl+T）', lambda: self._extract_single(idea_id))
             menu.addSeparator()
             menu.addAction('📍 取消置顶' if data[4] else '📌 置顶', self._do_pin)
             menu.addAction('☆ 取消收藏' if data[5] else '⭐ 收藏', self._do_fav)
