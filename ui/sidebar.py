@@ -53,48 +53,44 @@ class Sidebar(QTreeWidget):
 
     def refresh(self):
         self.clear()
+        self.setColumnCount(1)
         counts = self.db.get_counts()
 
-        # 1. 根节点 (分区组)
-        root = QTreeWidgetItem(self, ["分区组"])
-        root.setExpanded(True)
-        # 根节点不可选择，也不可拖拽
-        root.setFlags(root.flags() & ~Qt.ItemIsSelectable & ~Qt.ItemIsDragEnabled)
-        font = root.font(0)
-        font.setBold(True)
-        root.setFont(0, font)
-        root.setForeground(0, QColor("#FFFFFF"))
-
-
-        # 2. 系统内置分类
-        menu_items = [
+        # --- 1. 固定的系统分类 ---
+        system_menu_items = [
             ("全部数据", 'all', '🗂️'), ("今日数据", 'today', '📅'),
             ("剪贴板数据", 'clipboard', '📋'),
             ("未分类", 'uncategorized', '⚠️'), ("未标签", 'untagged', '🏷️'),
             ("收藏", 'favorite', '⭐'), ("回收站", 'trash', '🗑️')
         ]
 
-        for name, key, icon in menu_items:
-            item = QTreeWidgetItem(root, [f"{icon}  {name} ({counts.get(key, 0)})"])
+        for name, key, icon in system_menu_items:
+            item = QTreeWidgetItem(self, [f"{icon}  {name} ({counts.get(key, 0)})"])
             item.setData(0, Qt.UserRole, (key, None))
-            # 系统项不可拖拽
+            # 系统项不可拖拽、不可折叠
             item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)
-        
-        # --- 新增：回收站下方的分割线 ---
-        sep_item = QTreeWidgetItem(root)
-        sep_item.setFlags(Qt.NoItemFlags) # 不可选中/点击
-        sep_item.setSizeHint(0, QSize(0, 12)) # 设置较小的高度，包含线条和上下留白
+            item.setExpanded(False)
 
+        # --- 2. 分割线 ---
+        sep_item = QTreeWidgetItem(self)
+        sep_item.setFlags(Qt.NoItemFlags)
+        sep_item.setSizeHint(0, QSize(0, 15))
         line_frame = QFrame()
         line_frame.setFixedHeight(1)
-        # 使用 bg_light 颜色，并在左右增加 margin 避免顶格，看起来更精致
         line_frame.setStyleSheet(f"background-color: {COLORS['bg_light']}; margin: 0px 8px;")
         self.setItemWidget(sep_item, 0, line_frame)
 
+        # --- 3. 用户自定义分区 ---
+        user_partitions_root = QTreeWidgetItem(self, ["🗃️ 我的分区"])
+        user_partitions_root.setFlags(user_partitions_root.flags() & ~Qt.ItemIsSelectable & ~Qt.ItemIsDragEnabled)
+        font = user_partitions_root.font(0)
+        font.setBold(True)
+        user_partitions_root.setFont(0, font)
+        user_partitions_root.setForeground(0, QColor("#FFFFFF"))
 
-        # 3. 动态分类 (组和区)
-        partitions = self.db.get_partitions_tree()
-        self._add_partition_recursive(partitions, self, counts['categories'])
+        partitions_tree = self.db.get_partitions_tree()
+        self._add_partition_recursive(partitions_tree, user_partitions_root, counts.get('categories', {}))
+
         self.expandAll()
 
     def _add_partition_recursive(self, partitions, parent_item, counts):
@@ -190,24 +186,28 @@ class Sidebar(QTreeWidget):
         menu = QMenu(self)
         menu.setStyleSheet("background:#2d2d2d;color:white")
 
-        # 默认总是可以添加组
-        menu.addAction('➕ 新建组', self._new_group)
+        # Case 1: 点击空白处，或 "我的分区" 标题
+        if not item or item.text(0) == "🗃️ 我的分区":
+            menu.addAction('➕ 新建组', self._new_group)
+            menu.exec_(self.mapToGlobal(pos))
+            return
 
-        # 只有当右键点击的是一个用户创建的分类时，才显示更多选项
-        if item and item.data(0, Qt.UserRole):
-            data = item.data(0, Qt.UserRole)
-            if data and data[0] == 'category':
-                cat_id = data[1]
-                raw_text = item.text(0)
-                # 名称提取 (去除图标和计数)
-                current_name = ' '.join(raw_text.split(' ')[:-1]).strip()[2:]
+        # Case 2: 点击的是用户创建的分类
+        data = item.data(0, Qt.UserRole)
+        if data and data[0] == 'category':
+            cat_id = data[1]
+            raw_text = item.text(0)
+            current_name = ' '.join(raw_text.split(' ')[:-1]).strip()[2:]
 
-                menu.addSeparator()
-                menu.addAction('➕ 新建区 (子分类)', lambda: self._new_zone(cat_id))
-                menu.addAction('✏️ 重命名', lambda: self._rename_category(cat_id, current_name))
-                menu.addAction('🗑️ 删除', lambda: self._del_category(cat_id))
+            menu.addAction('➕ 新建组', self._new_group)
+            menu.addSeparator()
+            menu.addAction('➕ 新建区 (子分类)', lambda: self._new_zone(cat_id))
+            menu.addAction('✏️ 重命名', lambda: self._rename_category(cat_id, current_name))
+            menu.addAction('🗑️ 删除', lambda: self._del_category(cat_id))
+            menu.exec_(self.mapToGlobal(pos))
 
-        menu.exec_(self.mapToGlobal(pos))
+        # Case 3: 点击系统分类，不显示菜单
+        # (do nothing)
 
     def _new_group(self):
         text, ok = QInputDialog.getText(self, '新建组', '组名称:')
