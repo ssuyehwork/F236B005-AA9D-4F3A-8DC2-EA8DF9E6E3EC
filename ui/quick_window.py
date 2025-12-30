@@ -12,6 +12,9 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QListWidget, QL
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon, QKeySequence
 
+# 导入新的搜索框组件
+from ui.components.search_line_edit import SearchLineEdit
+
 # =================================================================================
 #   Win32 API 定义
 # =================================================================================
@@ -186,11 +189,8 @@ class QuickWindow(QWidget):
         if user32:
             self.monitor_timer.start(200)
 
-        self.search_timer = QTimer(self)
-        self.search_timer.setSingleShot(True)
-        self.search_timer.timeout.connect(self._update_list)
-        
-        self.search_box.textChanged.connect(self._on_search_text_changed)
+        # 连接新组件的信号
+        self.search_box.search_triggered.connect(self._update_list)
         self.list_widget.itemActivated.connect(self._on_item_activated)
         self.partition_tree.currentItemChanged.connect(self._on_partition_selection_changed)
         
@@ -297,8 +297,8 @@ class QuickWindow(QWidget):
         self.main_layout.addLayout(title_bar_layout)
         
         # --- Search Bar ---
-        self.search_box = QLineEdit(self)
-        self.search_box.setPlaceholderText("搜索剪贴板历史...")
+        self.search_box = SearchLineEdit(self) # 替换为新的组件
+        self.search_box.setPlaceholderText("搜索剪贴板历史... (双击查看历史)")
         self.clear_action = QAction(self)
         self.clear_action.setIcon(self.style().standardIcon(QStyle.SP_DialogCloseButton))
         self.search_box.addAction(self.clear_action, QLineEdit.TrailingPosition)
@@ -463,10 +463,8 @@ class QuickWindow(QWidget):
             finally:
                 if attached: user32.AttachThreadInput(curr_thread, self.last_thread_id, False)
 
-    def _on_search_text_changed(self): self.search_timer.start(300)
-
-    def _update_list(self):
-        search_text = self.search_box.text()
+    def _update_list(self, search_text):
+        # 直接使用信号传递过来的搜索文本
         partition_filter = None
         date_modify_filter = None # 新增变量
         current_partition = self.partition_tree.currentItem()
