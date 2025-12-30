@@ -357,9 +357,13 @@ class QuickWindow(QWidget):
         self._update_partition_status_display()
 
     def closeEvent(self, event):
+        # 保存状态
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("splitter_state", self.splitter.saveState())
-        super().closeEvent(event)
+        # 隐藏窗口而不是关闭
+        self.hide()
+        # 忽略事件，阻止窗口被真正销毁
+        event.ignore()
 
     # --- Mouse Logic ---
     def _get_resize_area(self, pos):
