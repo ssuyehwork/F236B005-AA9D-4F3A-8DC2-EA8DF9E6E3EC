@@ -71,6 +71,7 @@ class MainWindow(QWidget):
         
         QShortcut(QKeySequence("Ctrl+T"), self, self._handle_extract_key)
         QShortcut(QKeySequence("Ctrl+N"), self, self.new_idea)
+        QShortcut(QKeySequence("Ctrl+W"), self, self.close)
         QShortcut(QKeySequence("Delete"), self, self._handle_del_key)
         QShortcut(QKeySequence("Escape"), self, self._clear_tag_filter)
 

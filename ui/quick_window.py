@@ -682,7 +682,11 @@ class QuickWindow(QWidget):
 
     def keyPressEvent(self, event):
         key = event.key()
-        if key == Qt.Key_Escape: self.close()
+        modifiers = event.modifiers()
+
+        if modifiers == Qt.ControlModifier and key == Qt.Key_W:
+            self.close()
+        elif key == Qt.Key_Escape: self.close()
         elif key in (Qt.Key_Up, Qt.Key_Down):
             if not self.list_widget.hasFocus():
                 self.list_widget.setFocus()
