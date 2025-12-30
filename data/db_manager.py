@@ -1,5 +1,7 @@
 # data/db_manager.py
 import sqlite3
+import hashlib
+import os
 from core.config import DB_NAME
 
 class DatabaseManager:
@@ -38,6 +40,11 @@ class DatabaseManager:
         if 'data_blob' not in cols:
             try: c.execute('ALTER TABLE ideas ADD COLUMN data_blob BLOB')
             except: pass
+        if 'content_hash' not in cols:
+            try:
+                c.execute('ALTER TABLE ideas ADD COLUMN content_hash TEXT')
+                c.execute('CREATE INDEX IF NOT EXISTS idx_content_hash ON ideas(content_hash)')
+            except: pass
             
         self.conn.commit()
 
@@ -69,27 +76,55 @@ class DatabaseManager:
                 c.execute('INSERT INTO idea_tags VALUES (?,?)', (iid, tid))
 
     def add_clipboard_item(self, item_type, content, data_blob=None, category_id=None):
-        """专门用于剪贴板项目的新接口"""
+        """
+        专门用于剪贴板项目的新接口，包含去重和自动标记功能。
+        """
         c = self.conn.cursor()
-        
-        # 自动生成标题
-        if item_type == 'text':
-            title = content.strip().split('\n')[0][:50]
-        elif item_type == 'image':
-            title = "[图片]"
-        elif item_type == 'file':
-            # content 在这里是文件路径
-            title = f"[文件] {os.path.basename(content.split(';')[0])}"
+
+        # 1. 计算哈希值
+        hasher = hashlib.sha256()
+        if item_type == 'text' or item_type == 'file':
+            hasher.update(content.encode('utf-8'))
+        elif item_type == 'image' and data_blob:
+            hasher.update(data_blob)
+        content_hash = hasher.hexdigest()
+
+        # 2. 检查内容是否已存在
+        c.execute("SELECT id FROM ideas WHERE content_hash = ?", (content_hash,))
+        existing_idea = c.fetchone()
+
+        if existing_idea:
+            # 内容已存在，更新时间戳
+            idea_id = existing_idea[0]
+            c.execute("UPDATE ideas SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (idea_id,))
+            self.conn.commit()
+            print(f"[DEBUG] 内容已存在，更新时间戳，ID={idea_id}")
+            return idea_id
         else:
-            title = "未命名"
+            # 内容不存在，创建新记录
+            # 自动生成标题
+            if item_type == 'text':
+                title = content.strip().split('\n')[0][:50]
+            elif item_type == 'image':
+                title = "[图片]"
+            elif item_type == 'file':
+                title = f"[文件] {os.path.basename(content.split(';')[0])}"
+            else:
+                title = "未命名"
+
+            # 插入数据
+            c.execute(
+                'INSERT INTO ideas (title, content, item_type, data_blob, category_id, content_hash) VALUES (?,?,?,?,?,?)',
+                (title, content, item_type, data_blob, category_id, content_hash)
+            )
+            idea_id = c.lastrowid
             
-        # 插入数据
-        c.execute(
-            'INSERT INTO ideas (title, content, item_type, data_blob, category_id) VALUES (?,?,?,?,?)',
-            (title, content, item_type, data_blob, category_id)
-        )
-        self.conn.commit()
-        return c.lastrowid
+            # 自动添加 "剪贴板" 标签
+            self._update_tags(idea_id, ["剪贴板"])
+
+            self.conn.commit()
+            print(f"[DEBUG] 新增剪贴板内容，ID={idea_id}")
+            return idea_id
 
     # --- 状态管理 ---
     def toggle_field(self, iid, field):
@@ -135,6 +170,7 @@ class DatabaseManager:
             if f_val is None: q += ' AND i.category_id IS NULL'
             else: q += ' AND i.category_id=?'; p.append(f_val)
         elif f_type == 'today': q += " AND date(i.updated_at,'localtime')=date('now','localtime')"
+        elif f_type == 'clipboard': q += " AND i.id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = '剪贴板'))"
         elif f_type == 'untagged': q += ' AND i.id NOT IN (SELECT idea_id FROM idea_tags)'
         elif f_type == 'favorite': q += ' AND i.is_favorite=1'
         
@@ -178,6 +214,7 @@ class DatabaseManager:
         queries = {
             'all': "is_deleted=0 OR is_deleted IS NULL",
             'today': "(is_deleted=0 OR is_deleted IS NULL) AND date(updated_at,'localtime')=date('now','localtime')",
+            'clipboard': "(is_deleted=0 OR is_deleted IS NULL) AND id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = '剪贴板'))",
             'uncategorized': "(is_deleted=0 OR is_deleted IS NULL) AND category_id IS NULL",
             'untagged': "(is_deleted=0 OR is_deleted IS NULL) AND id NOT IN (SELECT idea_id FROM idea_tags)",
             'favorite': "(is_deleted=0 OR is_deleted IS NULL) AND is_favorite=1",

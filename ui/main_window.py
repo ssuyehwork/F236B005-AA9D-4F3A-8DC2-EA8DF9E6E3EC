@@ -322,7 +322,7 @@ class MainWindow(QWidget):
         self.tag_filter_label.hide()
         self.clear_tag_btn.hide()
         
-        titles = {'all':'全部数据','today':'今日数据','trash':'回收站','favorite':'我的收藏'}
+        titles = {'all':'全部数据','today':'今日数据','trash':'回收站','favorite':'我的收藏', 'clipboard': '剪贴板数据'}
         if f_type == 'category':
             cat = next((c for c in self.db.get_categories() if c[0] == val), None)
             self.header_label.setText(f"📂 {cat[1]}" if cat else '文件夹')
