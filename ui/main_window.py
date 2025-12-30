@@ -154,10 +154,22 @@ class MainWindow(QWidget):
         layout.addWidget(title)
         
         self.search = SearchLineEdit()
+        self.search.setClearButtonEnabled(True)
         self.search.setPlaceholderText('🔍 搜索灵感 (双击查看历史)')
         self.search.setFixedWidth(280)
         self.search.setFixedHeight(28)
-        self.search.setStyleSheet(STYLES['input'] + "QLineEdit { border-radius: 14px; }")
+        self.search.setStyleSheet(STYLES['input'] + """
+            QLineEdit {
+                border-radius: 14px;
+                padding-right: 25px;
+            }
+            QLineEdit::clear-button {
+                image: url(assets/clear.png);
+                subcontrol-position: right;
+                subcontrol-origin: margin;
+                margin-right: 5px;
+            }
+        """)
         self.search.textChanged.connect(self._load_data)
         self.search.returnPressed.connect(self._add_search_to_history)
         layout.addWidget(self.search)
