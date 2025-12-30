@@ -8,6 +8,7 @@ from core.settings import save_setting
 
 class FloatingBall(QWidget):
     request_show_quick_window = pyqtSignal()
+    request_show_main_window = pyqtSignal()
     request_quit_app = pyqtSignal()
     double_clicked = pyqtSignal() # 保留，以防未来使用
 
@@ -131,6 +132,7 @@ class FloatingBall(QWidget):
         m = QMenu(self)
         m.setStyleSheet("background:#2d2d2d;color:white;border:1px solid #333")
         m.addAction('📖 打开快速笔记', self.request_show_quick_window.emit)
+        m.addAction('💻 打开主界面', self.request_show_main_window.emit)
         m.addAction('➕ 新建灵感', self.mw.new_idea) # 这个功能仍然依赖 main_window
         m.addSeparator()
         m.addAction('❌ 退出', self.request_quit_app.emit)
