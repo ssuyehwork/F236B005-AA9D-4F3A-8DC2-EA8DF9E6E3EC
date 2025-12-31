@@ -185,7 +185,7 @@ class DatabaseManager:
             c.execute('SELECT * FROM ideas WHERE id=?', (iid,))
         else:
             # 明确排除 data_blob
-            c.execute('SELECT id, title, content, color, is_pinned, is_favorite, created_at, updated_at, category_id, item_type FROM ideas WHERE id=?', (iid,))
+            c.execute('SELECT id, title, content, color, is_pinned, is_favorite, created_at, updated_at, category_id, item_type, source FROM ideas WHERE id=?', (iid,))
         return c.fetchone()
 
     def get_ideas(self, search, f_type, f_val):

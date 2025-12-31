@@ -69,8 +69,7 @@ class ClipboardService(QObject):
                 category_id=category_id,
                 item_type=item_type,
                 data_blob=data_blob,
-                content_hash=content_hash,
-                source='clipboard'
+                content_hash=content_hash
             )
             
             # Automatically add "剪贴板" tag
