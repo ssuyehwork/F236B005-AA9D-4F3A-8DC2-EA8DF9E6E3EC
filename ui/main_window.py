@@ -165,6 +165,8 @@ class MainWindow(QWidget):
         if preview_data:
             dialog = PreviewDialog(item_type, preview_data, self)
             dialog.exec_()
+            # 强制将焦点设置回列表容器，以确保后续键盘事件能被正确处理
+            self.list_container.setFocus()
     
     def _select_all(self):
         """全选当前视图中的所有卡片"""

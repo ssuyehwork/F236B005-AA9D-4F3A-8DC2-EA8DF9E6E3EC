@@ -8,9 +8,10 @@ from PyQt5.QtGui import QKeySequence, QColor, QPixmap
 from PyQt5.QtCore import Qt
 from core.config import STYLES, COLORS
 from .components.rich_text_edit import RichTextEdit
-from services.idea_service import IdeaService # New dependency
+from services.idea_service import IdeaService
+from core.enums import FilterType
 
-# 自定义深灰色滚动条样式
+# ... (SCROLLBAR_STYLE and BaseDialog remain the same) ...
 SCROLLBAR_STYLE = """
 QScrollBar:vertical {
     border: none;
@@ -85,8 +86,8 @@ class BaseDialog(QDialog):
         
         return self.content_container
 
-# === 编辑窗口 ===
 class EditDialog(BaseDialog):
+    # ... (EditDialog implementation remains the same) ...
     def __init__(self, idea_service: IdeaService, idea_id=None, parent=None, category_id_for_new=None): # Changed signature
         super().__init__(parent)
         self.idea_service = idea_service # Use service
@@ -239,8 +240,8 @@ class EditDialog(BaseDialog):
         
         self.accept()
 
-# === 看板窗口 ===
 class StatsDialog(BaseDialog):
+    # ... (StatsDialog implementation remains the same) ...
     def __init__(self, idea_service: IdeaService, parent=None): # Changed signature
         super().__init__(parent)
         self.setWindowTitle('📊 数据看板')
@@ -301,8 +302,8 @@ class StatsDialog(BaseDialog):
         vl.addWidget(lbl_val)
         return f
 
-# === 提取窗口 ===
 class ExtractDialog(BaseDialog):
+    # ... (ExtractDialog implementation remains the same) ...
     def __init__(self, idea_service: IdeaService, parent=None): # Changed signature
         super().__init__(parent)
         self.setWindowTitle('📋 提取内容')
@@ -341,11 +342,14 @@ class PreviewDialog(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.Popup)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        
         self._init_ui(item_type, data)
 
-        QShortcut(QKeySequence(Qt.Key_Escape), self, self.close)
-        QShortcut(QKeySequence(Qt.Key_Space), self, self.close)
+    def keyPressEvent(self, event):
+        """重写 keyPressEvent 来处理按键关闭事件, 更加健壮"""
+        if event.key() == Qt.Key_Escape or event.key() == Qt.Key_Space:
+            self.close()
+        else:
+            super().keyPressEvent(event)
 
     def _init_ui(self, item_type, data):
         main_layout = QVBoxLayout(self)
