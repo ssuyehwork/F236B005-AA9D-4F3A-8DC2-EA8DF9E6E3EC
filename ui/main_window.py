@@ -17,9 +17,10 @@ from core.settings import load_setting
 # from services.backup_service import BackupService
 from services.idea_service import IdeaService
 from ui.sidebar import Sidebar
-from core.enums import FilterType # New dependency
+from core.enums import FilterType
 from ui.cards import IdeaCard
-from ui.dialogs import EditDialog, PreviewDialog
+from ui.dialogs import EditDialog # PreviewDialog is now in its own file
+from ui.preview_dialog import PreviewDialog # New import
 from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 from ui.components.search_line_edit import SearchLineEdit
