@@ -130,7 +130,7 @@ class DatabaseManager:
             # 内容不存在，创建新记录
             # 自动生成标题
             if item_type == 'text':
-                title = content.strip().split('\n')[0][:50]
+                title = content.strip().split('\\n')[0][:50]
             elif item_type == 'image':
                 title = "[图片]"
             elif item_type == 'file':
