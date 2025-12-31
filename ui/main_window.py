@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # ui/main_window.py
 import sys
+import logging
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLineEdit,
                                QPushButton, QLabel, QScrollArea, QShortcut, QMessageBox,
                                QApplication, QToolTip, QMenu, QFrame, QTextEdit, QDialog,
@@ -23,6 +24,8 @@ from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 from ui.components.search_line_edit import SearchLineEdit
 
+logger = logging.getLogger(__name__)
+
 class ContentContainer(QWidget):
     cleared = pyqtSignal()
 
@@ -40,7 +43,7 @@ class MainWindow(QWidget):
 
     def __init__(self, idea_service: IdeaService):
         super().__init__()
-        print("[DEBUG] ========== MainWindow 初始化开始 ==========")
+        logger.debug("========== MainWindow 初始化开始 ==========")
         self.idea_service = idea_service
         self.curr_filter = (FilterType.ALL.value, None) # Use Enum value
         self.selected_ids = set()
@@ -59,7 +62,7 @@ class MainWindow(QWidget):
         self._setup_ui()
         self._load_data()
         
-        print("[DEBUG] MainWindow 初始化完成")
+        logger.debug("MainWindow 初始化完成")
 
     def _setup_ui(self):
         self.setWindowTitle('数据管理')
@@ -524,7 +527,7 @@ class MainWindow(QWidget):
         
         # Use service to add idea
         idea_id = self.idea_service.add_idea(title, raw, COLORS['primary'], [], None)
-        print(f"[DEBUG] 快速添加灵感成功,ID={idea_id}")
+        logger.debug(f"快速添加灵感成功,ID={idea_id}")
         
         self._show_tag_selector(idea_id)
         
@@ -532,7 +535,7 @@ class MainWindow(QWidget):
 
     def _show_tag_selector(self, idea_id):
         """显示标签选择浮窗"""
-        print(f"[DEBUG] 显示标签选择器,idea_id={idea_id}")
+        logger.debug(f"显示标签选择器,idea_id={idea_id}")
         
         # Pass service to tag selector
         tag_selector = AdvancedTagSelector(self.idea_service, idea_id, self)
@@ -541,7 +544,7 @@ class MainWindow(QWidget):
 
     def _on_tags_confirmed(self, idea_id, tags):
         """标签确认后的回调"""
-        print(f"[DEBUG] 标签已确认,idea_id={idea_id}, tags={tags}")
+        logger.debug(f"标签已确认,idea_id={idea_id}, tags={tags}")
         self._show_tooltip(f'✅ 已记录并绑定 {len(tags)} 个标签', 2000)
         self._refresh_all()
 
@@ -569,7 +572,7 @@ class MainWindow(QWidget):
         self._refresh_tag_panel()
 
     def _load_data(self):
-        print("[DEBUG] ========== _load_data 开始 ==========")
+        logger.debug("========== _load_data 开始 ==========")
         while self.list_layout.count():
             w = self.list_layout.takeAt(0).widget()
             if w: w.deleteLater()
@@ -577,7 +580,7 @@ class MainWindow(QWidget):
         self.cards = {}
         # Use service to get ideas
         data_list = self.idea_service.get_ideas_for_filter(self.search.text(), *self.curr_filter)
-        print(f"[DEBUG] 查询到 {len(data_list)} 条数据")
+        logger.debug(f"查询到 {len(data_list)} 条数据")
         
         if self.current_tag_filter:
             filtered = []
@@ -586,7 +589,7 @@ class MainWindow(QWidget):
                 if self.current_tag_filter in self.idea_service.get_idea_tags(d[0]):
                     filtered.append(d)
             data_list = filtered
-            print(f"[DEBUG] 标签筛选后剩余 {len(data_list)} 条")
+            logger.debug(f"标签筛选后剩余 {len(data_list)} 条")
             
         if not data_list:
             self.list_layout.addWidget(QLabel("🔭 空空如也", alignment=Qt.AlignCenter, styleSheet="color:#666;font-size:16px;margin-top:50px"))
@@ -595,10 +598,10 @@ class MainWindow(QWidget):
             c = IdeaCard(d, self.idea_service) # Pass service
 
             c.selection_requested.connect(self._handle_selection_request)
-            print(f"[DEBUG] 卡片 ID={d[0]} selection_requested 信号连接完成")
+            # logger.debug(f"卡片 ID={d[0]} selection_requested 信号连接完成")
             
             c.double_clicked.connect(self._extract_single)
-            print(f"[DEBUG] 卡片 ID={d[0]} double_clicked 信号连接到 _extract_single")
+            # logger.debug(f"卡片 ID={d[0]} double_clicked 信号连接到 _extract_single")
             
             c.setContextMenuPolicy(Qt.CustomContextMenu)
             c.customContextMenuRequested.connect(lambda pos, iid=d[0]: self._show_card_menu(iid, pos))
@@ -606,7 +609,7 @@ class MainWindow(QWidget):
             self.list_layout.addWidget(c)
             self.cards[d[0]] = c
             
-        print(f"[DEBUG] 共创建 {len(self.cards)} 个卡片")
+        logger.debug(f"共创建 {len(self.cards)} 个卡片")
         self._update_ui_state()
 
     def _show_card_menu(self, idea_id, pos):
@@ -715,7 +718,7 @@ class MainWindow(QWidget):
 
     def _on_new_data_in_category_requested(self, cat_id):
         """响应侧边栏请求，在指定分类下创建新笔记"""
-        print(f"[DEBUG] 响应 new_data_requested 信号, cat_id={cat_id}")
+        logger.debug(f"响应 new_data_requested 信号, cat_id={cat_id}")
         # Pass service to dialog
         dialog = EditDialog(self.idea_service, category_id_for_new=cat_id, parent=self)
         if dialog.exec_():
@@ -726,14 +729,14 @@ class MainWindow(QWidget):
         QTimer.singleShot(dur, QToolTip.hideText)
 
     def new_idea(self):
-        print("[DEBUG] new_idea 被调用")
+        logger.debug("new_idea 被调用")
         # Pass service to dialog
         if EditDialog(self.idea_service).exec_(): self._refresh_all()
 
     def _do_edit(self):
         if len(self.selected_ids) == 1:
             idea_id = list(self.selected_ids)[0]
-            print(f"[DEBUG] ========== _do_edit 被调用 ========== idea_id={idea_id}")
+            logger.debug(f"========== _do_edit 被调用 ========== idea_id={idea_id}")
             
             # Pass service to dialog
             dialog = EditDialog(self.idea_service, idea_id=idea_id)
@@ -778,7 +781,7 @@ class MainWindow(QWidget):
 
     def _extract_single(self, idea_id):
         """双击直接提取正文内容到剪贴板"""
-        print(f"[DEBUG] _extract_single 被调用,idea_id={idea_id}")
+        logger.debug(f"_extract_single 被调用,idea_id={idea_id}")
         
         # Data is already in the card, no need for a db call
         card = self.cards.get(idea_id)
@@ -795,7 +798,7 @@ class MainWindow(QWidget):
         preview = content_to_copy.replace('\n', ' ')[:40] + ('...' if len(content_to_copy) > 40 else '')
         self._show_tooltip(f'✅ 内容已提取到剪贴板\n\n📋 {preview}', 2500)
         
-        print(f"[DEBUG] 纯文本内容已复制到剪贴板: {preview}...")
+        logger.debug(f"纯文本内容已复制到剪贴板: {preview}...")
 
     def _extract_all(self):
         # Use service
