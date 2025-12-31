@@ -95,11 +95,7 @@ class MainWindow(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter(Qt.Horizontal)
         
-        self.sidebar = Sidebar(self.db)
-        self.sidebar.filter_changed.connect(self._set_filter)
-        self.sidebar.data_changed.connect(self._load_data)
-        self.sidebar.new_data_requested.connect(self._on_new_data_in_category_requested)
-        self.sidebar = Sidebar(self.idea_service) # Pass service instead of db_manager
+        self.sidebar = Sidebar(self.idea_service) # Pass service instead of db
         self.sidebar.filter_changed.connect(self._set_filter)
         self.sidebar.data_changed.connect(self._load_data)
         self.sidebar.new_data_requested.connect(self._on_new_data_in_category_requested)
