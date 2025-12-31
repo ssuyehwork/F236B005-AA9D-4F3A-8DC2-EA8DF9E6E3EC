@@ -149,60 +149,6 @@ QPushButton#PinButton:hover { background-color: #444; }
 QPushButton#PinButton:checked { background-color: #0078D4; color: white; border: 1px solid #005A9E; }
 """
 
-# =================================================================================
-#   自定义控件 - 可拖拽删除的列表
-# =================================================================================
-class DragToDeleteListWidget(QListWidget):
-    """
-    一个特殊的 QListWidget, 支持将项目拖拽出窗口以删除它们。
-    """
-    item_deletion_requested = pyqtSignal(object)
-
-    def __init__(self, parent_window, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.parent_window = parent_window
-        self._drag_start_position = QPoint()
-        self._dragged_item_data = None
-        self._is_drag_action = False
-
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
-        if event.button() == Qt.LeftButton:
-            item = self.itemAt(event.pos())
-            if item:
-                self._drag_start_position = event.pos()
-                self._dragged_item_data = item.data(Qt.UserRole)
-                self._is_drag_action = False # 重置
-
-    def mouseMoveEvent(self, event):
-        # 只有在鼠标左键按下且有起始项目时才处理
-        if (event.buttons() & Qt.LeftButton) and self._dragged_item_data:
-            # 检查是否满足拖拽启动的距离
-            if (event.pos() - self._drag_start_position).manhattanLength() > QApplication.startDragDistance():
-                self._is_drag_action = True
-                # 标记为拖拽后，可以改变光标等提供视觉反馈
-                self.setCursor(Qt.DragMoveCursor)
-
-        # 无论如何都调用父类方法，以保持滚动等功能正常
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        is_outside = not self.parent_window.geometry().contains(event.globalPos())
-
-        # 如果这是一次拖拽操作（而不仅仅是点击），并且释放在窗口外部
-        if self._is_drag_action and is_outside and self._dragged_item_data:
-            self.item_deletion_requested.emit(self._dragged_item_data)
-        else:
-            # 如果不是删除操作，则调用父类的方法来处理正常的点击/激活事件
-            # 这非常重要，否则单击和双击将失效
-            super().mouseReleaseEvent(event)
-
-        # 重置所有状态
-        self.setCursor(Qt.ArrowCursor)
-        self._drag_start_position = QPoint()
-        self._dragged_item_data = None
-        self._is_drag_action = False
-
 class QuickWindow(QWidget):
     RESIZE_MARGIN = 18 
     open_main_window_requested = pyqtSignal()
@@ -247,7 +193,7 @@ class QuickWindow(QWidget):
         
         self.search_box.textChanged.connect(self._on_search_text_changed)
         self.list_widget.itemActivated.connect(self._on_item_activated)
-        self.list_widget.item_deletion_requested.connect(self._on_item_deleted_by_drag) # <-- 连接新信号
+        self.list_widget.customContextMenuRequested.connect(self._show_context_menu) # <-- 连接右键菜单信号
         self.partition_tree.currentItemChanged.connect(self._on_partition_selection_changed)
         
         self.clear_action.triggered.connect(self.search_box.clear)
@@ -369,9 +315,10 @@ class QuickWindow(QWidget):
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(4)
         
-        self.list_widget = DragToDeleteListWidget(self) # <-- 替换为自定义控件
+        self.list_widget = QListWidget()
         self.list_widget.setFocusPolicy(Qt.StrongFocus)
         self.list_widget.setAlternatingRowColors(True)
+        self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu) # <-- 启用自定义右键菜单
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
@@ -766,18 +713,79 @@ class QuickWindow(QWidget):
         self._update_list()
         self._update_partition_tree()
 
-    def _on_item_deleted_by_drag(self, item_data):
-        """处理拖拽删除请求"""
+    def _show_context_menu(self, pos):
+        """在指定位置显示右键菜单"""
+        item = self.list_widget.itemAt(pos)
+        if not item:
+            return
+
+        menu = QMenu(self)
+
+        # 删除
+        delete_action = menu.addAction("删除")
+        delete_action.triggered.connect(self._delete_item)
+
+        # 收藏
+        fav_action = menu.addAction("收藏/取消收藏")
+        fav_action.triggered.connect(self._toggle_favorite)
+
+        # 置顶
+        pin_action = menu.addAction("置顶/取消置顶")
+        pin_action.triggered.connect(self._toggle_pinned)
+
+        # 在全局光标位置显示菜单
+        menu.exec_(self.list_widget.mapToGlobal(pos))
+
+    def _delete_item(self):
+        """删除当前选中的项目"""
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+
+        item_data = current_item.data(Qt.UserRole)
         if not item_data:
             return
 
-        idea_id = item_data[0] # 数据元组的第一个元素是 id
+        idea_id = item_data[0]
         try:
-            self.db.soft_delete_idea(idea_id)
-            log(f"🗑️ 已通过拖拽将笔记 {idea_id} 移至回收站。")
-
-            # 刷新列表和分区计数
+            self.db.set_deleted(idea_id, True)
+            log(f"🗑️ 已将笔记 {idea_id} 移至回收站。")
             self._update_all_views()
-
         except Exception as e:
-            log(f"❌ 拖拽删除笔记 {idea_id} 失败: {e}")
+            log(f"❌ 删除笔记 {idea_id} 失败: {e}")
+
+    def _toggle_favorite(self):
+        """切换当前选中项目的收藏状态"""
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+
+        item_data = current_item.data(Qt.UserRole)
+        if not item_data:
+            return
+
+        idea_id = item_data[0]
+        try:
+            self.db.toggle_field(idea_id, 'is_favorite')
+            log(f"⭐ 切换笔记 {idea_id} 的收藏状态。")
+            self._update_all_views()
+        except Exception as e:
+            log(f"❌ 切换收藏状态失败 for {idea_id}: {e}")
+
+    def _toggle_pinned(self):
+        """切换当前选中项目的置顶状态"""
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+
+        item_data = current_item.data(Qt.UserRole)
+        if not item_data:
+            return
+
+        idea_id = item_data[0]
+        try:
+            self.db.toggle_field(idea_id, 'is_pinned')
+            log(f"📌 切换笔记 {idea_id} 的置顶状态。")
+            self._update_all_views()
+        except Exception as e:
+            log(f"❌ 切换置顶状态失败 for {idea_id}: {e}")
