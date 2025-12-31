@@ -163,14 +163,16 @@ class MainWindow(QWidget):
                 return
 
         if preview_data:
-            self.preview_shortcut.setEnabled(False) # 禁用快捷键，防止冲突
-            try:
-                dialog = PreviewDialog(item_type, preview_data, self)
-                dialog.exec_()
-            finally:
-                self.preview_shortcut.setEnabled(True) # 重新启用快捷键
-                # 恢复焦点
-                self.list_container.setFocus()
+            self.preview_shortcut.setEnabled(False)  # 禁用快捷键，防止冲突
+            dialog = PreviewDialog(item_type, preview_data, self)
+            dialog.exec_()
+            # 使用 QTimer.singleShot 延迟执行，避免事件竞争
+            QTimer.singleShot(0, self._on_preview_closed)
+
+    def _on_preview_closed(self):
+        """预览窗口关闭后的清理操作"""
+        self.preview_shortcut.setEnabled(True)  # 重新启用快捷键
+        self.list_container.setFocus()       # 恢复焦点
     
     def _select_all(self):
         """全选当前视图中的所有卡片"""
