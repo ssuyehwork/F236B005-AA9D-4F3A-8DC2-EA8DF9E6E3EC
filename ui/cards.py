@@ -97,13 +97,26 @@ class IdeaCard(QFrame):
         
         for tag in visible_tags:
             tag_label = QLabel(f"#{tag}")
-            tag_label.setStyleSheet("""
-                background: rgba(255,255,255,0.1);
-                border-radius: 4px;
-                padding: 2px 6px;
-                font-size: 10px;
-                color: rgba(255,255,255,180);
-            """)
+
+            # 根据标签名称设置不同样式
+            if tag == "剪贴板":
+                style = """
+                    background: #505050;
+                    border-radius: 4px;
+                    padding: 2px 6px;
+                    font-size: 10px;
+                    color: #FFFFFF;
+                """
+            else:
+                style = """
+                    background: rgba(255,255,255,0.1);
+                    border-radius: 4px;
+                    padding: 2px 6px;
+                    font-size: 10px;
+                    color: rgba(255,255,255,180);
+                """
+
+            tag_label.setStyleSheet(style)
             bot.addWidget(tag_label)
             
         if remaining > 0:
