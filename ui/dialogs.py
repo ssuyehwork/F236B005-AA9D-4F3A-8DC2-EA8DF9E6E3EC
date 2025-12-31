@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGridLayout, QHBoxLayout,
 from PyQt5.QtGui import QKeySequence, QColor
 from PyQt5.QtCore import Qt
 from core.config import STYLES, COLORS
+from .components.rich_text_edit import RichTextEdit
 
 # 自定义深灰色滚动条样式
 SCROLLBAR_STYLE = """
@@ -179,8 +180,8 @@ class EditDialog(BaseDialog):
         right_panel.setSpacing(10)
         
         right_panel.addWidget(QLabel('📝 详细内容'))
-        self.content_inp = QTextEdit()
-        self.content_inp.setPlaceholderText("在这里记录详细内容...")
+        self.content_inp = RichTextEdit()
+        self.content_inp.setPlaceholderText("在这里记录详细内容（支持粘贴图片）...")
         self.content_inp.setStyleSheet("""
             QTextEdit {
                 background-color: #2a2a2a;
@@ -240,6 +241,12 @@ class EditDialog(BaseDialog):
             self.content_inp.setText(d[2])
             self._set_color(d[3])
             self.category_id = d[8]
+
+            item_type = d[9]
+            data_blob = d[10]
+            if item_type == 'image' and data_blob:
+                self.content_inp.set_image_data(data_blob)
+
             self.tags_inp.setText(','.join(self.db.get_tags(self.idea_id)))
 
     def _save_data(self):
@@ -253,12 +260,17 @@ class EditDialog(BaseDialog):
         content = self.content_inp.toPlainText()
         color = self.selected_color
         
+        item_type = 'text'
+        data_blob = self.content_inp.get_image_data()
+        if data_blob:
+            item_type = 'image'
+
         if self.idea_id:
             # 更新模式
-            self.db.update_idea(self.idea_id, title, content, color, tags, self.category_id)
+            self.db.update_idea(self.idea_id, title, content, color, tags, self.category_id, item_type, data_blob)
         else:
             # 新建模式
-            self.db.add_idea(title, content, color, tags, category_id=self.category_id_for_new)
+            self.db.add_idea(title, content, color, tags, self.category_id_for_new, item_type, data_blob)
         
         self.accept()
 
