@@ -4,12 +4,14 @@ import sqlite3
 import hashlib
 import os
 from core.config import DB_NAME
+from .schema_migrations import SchemaMigration
 
 class DatabaseManager:
     def __init__(self):
         self.conn = sqlite3.connect(DB_NAME)
         self.conn.row_factory = sqlite3.Row
-        self._init_schema()
+        SchemaMigration.apply(self.conn)  # 运行数据库迁移
+        # self._init_schema()  # 旧的 schema 管理可以被迁移替代或移除
 
     def _init_schema(self):
         c = self.conn.cursor()
@@ -138,8 +140,8 @@ class DatabaseManager:
 
             # 插入数据
             c.execute(
-                'INSERT INTO ideas (title, content, item_type, data_blob, category_id, content_hash) VALUES (?,?,?,?,?,?)',
-                (title, content, item_type, data_blob, category_id, content_hash)
+                'INSERT INTO ideas (title, content, item_type, data_blob, category_id, content_hash, source) VALUES (?,?,?,?,?,?,?)',
+                (title, content, item_type, data_blob, category_id, content_hash, 'clipboard')
             )
             idea_id = c.lastrowid
             
