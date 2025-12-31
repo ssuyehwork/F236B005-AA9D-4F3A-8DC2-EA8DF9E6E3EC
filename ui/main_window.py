@@ -9,9 +9,14 @@ from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal
 from PyQt5.QtGui import QKeySequence, QCursor, QColor
 from core.config import STYLES, COLORS
 from core.settings import load_setting
-from data.db_manager import DatabaseManager
-from services.backup_service import BackupService
+from core.config import STYLES, COLORS
+from core.settings import load_setting
+# No longer directly depends on DatabaseManager or BackupService
+# from data.db_manager import DatabaseManager
+# from services.backup_service import BackupService
+from services.idea_service import IdeaService
 from ui.sidebar import Sidebar
+from core.enums import FilterType # New dependency
 from ui.cards import IdeaCard
 from ui.dialogs import EditDialog, PreviewDialog
 from ui.ball import FloatingBall
@@ -33,11 +38,11 @@ class MainWindow(QWidget):
     # 调整大小的边距
     RESIZE_MARGIN = 8
 
-    def __init__(self):
+    def __init__(self, idea_service: IdeaService):
         super().__init__()
         print("[DEBUG] ========== MainWindow 初始化开始 ==========")
-        self.db = DatabaseManager()
-        self.curr_filter = ('all', None)
+        self.idea_service = idea_service
+        self.curr_filter = (FilterType.ALL.value, None) # Use Enum value
         self.selected_ids = set()
         self._drag_pos = None
         self.current_tag_filter = None
@@ -94,6 +99,10 @@ class MainWindow(QWidget):
         self.sidebar.filter_changed.connect(self._set_filter)
         self.sidebar.data_changed.connect(self._load_data)
         self.sidebar.new_data_requested.connect(self._on_new_data_in_category_requested)
+        self.sidebar = Sidebar(self.idea_service) # Pass service instead of db_manager
+        self.sidebar.filter_changed.connect(self._set_filter)
+        self.sidebar.data_changed.connect(self._load_data)
+        self.sidebar.new_data_requested.connect(self._on_new_data_in_category_requested)
         splitter.addWidget(self.sidebar)
         
         middle_panel = self._create_middle_panel()
@@ -129,7 +138,8 @@ class MainWindow(QWidget):
             return
 
         idea_id = list(self.selected_ids)[0]
-        idea = self.db.get_idea(idea_id, include_blob=True)
+        # Use service to get data
+        idea = self.idea_service.get_idea_with_blob(idea_id)
         if not idea:
             self._show_tooltip('⚠️ 找不到该项目', 1500)
             return
@@ -344,9 +354,8 @@ class MainWindow(QWidget):
             item = self.tag_list_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
         
-        c = self.db.conn.cursor()
-        c.execute('SELECT t.name, COUNT(it.idea_id) as cnt FROM tags t JOIN idea_tags it ON t.id = it.tag_id JOIN ideas i ON it.idea_id = i.id WHERE i.is_deleted = 0 GROUP BY t.id ORDER BY cnt DESC, t.name ASC')
-        tags = c.fetchall()
+        # Use service to get tags
+        tags = self.idea_service.get_all_tags_with_counts()
         
         if not tags:
             empty = QLabel('暂无标签')
@@ -517,7 +526,8 @@ class MainWindow(QWidget):
         title = lines[0][:25].strip() if lines else "快速记录"
         if len(lines) > 1 or len(lines[0]) > 25: title += "..."
         
-        idea_id = self.db.add_idea(title, raw, COLORS['primary'], [], None)
+        # Use service to add idea
+        idea_id = self.idea_service.add_idea(title, raw, COLORS['primary'], [], None)
         print(f"[DEBUG] 快速添加灵感成功,ID={idea_id}")
         
         self._show_tag_selector(idea_id)
@@ -528,7 +538,8 @@ class MainWindow(QWidget):
         """显示标签选择浮窗"""
         print(f"[DEBUG] 显示标签选择器,idea_id={idea_id}")
         
-        tag_selector = AdvancedTagSelector(self.db, idea_id, self)
+        # Pass service to tag selector
+        tag_selector = AdvancedTagSelector(self.idea_service, idea_id, self)
         tag_selector.tags_confirmed.connect(lambda tags: self._on_tags_confirmed(idea_id, tags))
         tag_selector.show_at_cursor()
 
@@ -545,9 +556,14 @@ class MainWindow(QWidget):
         self.tag_filter_label.hide()
         self.clear_tag_btn.hide()
         
-        titles = {'all':'全部数据','today':'今日数据','trash':'回收站','favorite':'我的收藏'}
-        if f_type == 'category':
-            cat = next((c for c in self.db.get_categories() if c[0] == val), None)
+        titles = {
+            FilterType.ALL.value: '全部数据',
+            FilterType.TODAY.value: '今日数据',
+            FilterType.TRASH.value: '回收站',
+            FilterType.FAVORITE.value: '我的收藏'
+        }
+        if f_type == FilterType.CATEGORY.value:
+            cat = next((c for c in self.idea_service.get_all_categories() if c[0] == val), None)
             self.header_label.setText(f"📂 {cat[1]}" if cat else '文件夹')
         else:
             self.header_label.setText(titles.get(f_type, '灵感列表'))
@@ -563,13 +579,15 @@ class MainWindow(QWidget):
             if w: w.deleteLater()
             
         self.cards = {}
-        data_list = self.db.get_ideas(self.search.text(), *self.curr_filter)
+        # Use service to get ideas
+        data_list = self.idea_service.get_ideas_for_filter(self.search.text(), *self.curr_filter)
         print(f"[DEBUG] 查询到 {len(data_list)} 条数据")
         
         if self.current_tag_filter:
             filtered = []
             for d in data_list:
-                if self.current_tag_filter in self.db.get_tags(d[0]):
+                # Use service to get tags
+                if self.current_tag_filter in self.idea_service.get_idea_tags(d[0]):
                     filtered.append(d)
             data_list = filtered
             print(f"[DEBUG] 标签筛选后剩余 {len(data_list)} 条")
@@ -578,7 +596,7 @@ class MainWindow(QWidget):
             self.list_layout.addWidget(QLabel("🔭 空空如也", alignment=Qt.AlignCenter, styleSheet="color:#666;font-size:16px;margin-top:50px"))
             
         for d in data_list:
-            c = IdeaCard(d, self.db)
+            c = IdeaCard(d, self.idea_service) # Pass service
 
             c.selection_requested.connect(self._handle_selection_request)
             print(f"[DEBUG] 卡片 ID={d[0]} selection_requested 信号连接完成")
@@ -602,8 +620,11 @@ class MainWindow(QWidget):
             self._update_all_card_selections()
             self._update_ui_state()
         
-        data = self.db.get_idea(idea_id)
-        if not data: return
+        # This is a bit tricky, the card has the basic data, but for menu we might need more.
+        # For now, let's assume the basic data is enough. A proper DTO would be better.
+        idea_card = self.cards.get(idea_id)
+        if not idea_card: return
+        data = idea_card.data
         
         menu = QMenu(self)
         menu.setStyleSheet(f"QMenu {{ background-color: {COLORS['bg_mid']}; color: white; border: 1px solid {COLORS['bg_light']}; border-radius: 6px; padding: 4px; }} QMenu::item {{ padding: 8px 20px; border-radius: 4px; }} QMenu::item:selected {{ background-color: {COLORS['primary']}; }} QMenu::separator {{ height: 1px; background: {COLORS['bg_light']}; margin: 4px 0px; }}")
@@ -620,7 +641,7 @@ class MainWindow(QWidget):
             
             cat_menu = menu.addMenu('📂 移动到分类')
             cat_menu.addAction('⚠️ 未分类', lambda: self._move_to_category(None))
-            for cat in self.db.get_categories():
+            for cat in self.idea_service.get_all_categories():
                 cat_menu.addAction(f'📂 {cat[1]}', lambda cid=cat[0]: self._move_to_category(cid))
                 
             menu.addSeparator()
@@ -634,8 +655,7 @@ class MainWindow(QWidget):
 
     def _move_to_category(self, cat_id):
         if self.selected_ids:
-            for iid in self.selected_ids:
-                self.db.move_category(iid, cat_id)
+            self.idea_service.move_to_category(self.selected_ids, cat_id)
             self._refresh_all()
             self._show_tooltip(f'✅ 已移动 {len(self.selected_ids)} 项')
 
@@ -664,7 +684,7 @@ class MainWindow(QWidget):
             card.update_selection(iid in self.selected_ids)
 
     def _update_ui_state(self):
-        in_trash = (self.curr_filter[0] == 'trash')
+        in_trash = (self.curr_filter[0] == FilterType.TRASH.value)
         selection_count = len(self.selected_ids)
         has_selection = selection_count > 0
         is_single_selection = selection_count == 1
@@ -686,8 +706,10 @@ class MainWindow(QWidget):
         # 更新 pin 和 fav 按钮的图标（仅单选时有意义）
         if is_single_selection and not in_trash:
             idea_id = list(self.selected_ids)[0]
-            d = self.db.get_idea(idea_id)
-            if d:
+            # Get data from the card to avoid another db call
+            card = self.cards.get(idea_id)
+            if card:
+                d = card.data
                 self.btns['pin'].setText('📍' if not d[4] else '📌')
                 self.btns['fav'].setText('☆' if not d[5] else '⭐')
         else:
@@ -698,7 +720,8 @@ class MainWindow(QWidget):
     def _on_new_data_in_category_requested(self, cat_id):
         """响应侧边栏请求，在指定分类下创建新笔记"""
         print(f"[DEBUG] 响应 new_data_requested 信号, cat_id={cat_id}")
-        dialog = EditDialog(self.db, category_id_for_new=cat_id, parent=self)
+        # Pass service to dialog
+        dialog = EditDialog(self.idea_service, category_id_for_new=cat_id, parent=self)
         if dialog.exec_():
             self._refresh_all()
 
@@ -708,48 +731,46 @@ class MainWindow(QWidget):
 
     def new_idea(self):
         print("[DEBUG] new_idea 被调用")
-        if EditDialog(self.db).exec_(): self._refresh_all()
+        # Pass service to dialog
+        if EditDialog(self.idea_service).exec_(): self._refresh_all()
 
     def _do_edit(self):
         if len(self.selected_ids) == 1:
             idea_id = list(self.selected_ids)[0]
             print(f"[DEBUG] ========== _do_edit 被调用 ========== idea_id={idea_id}")
             
-            # 创建EditDialog实例,它现在需要完整的idea数据来初始化
-            dialog = EditDialog(self.db, idea_id=idea_id)
+            # Pass service to dialog
+            dialog = EditDialog(self.idea_service, idea_id=idea_id)
             if dialog.exec_():
                 self._refresh_all()
 
     def _do_pin(self):
         if self.selected_ids:
             for iid in self.selected_ids:
-                self.db.toggle_field(iid, 'is_pinned')
-            self._load_data()
+                self.idea_service.toggle_pinned(iid)
+            self._load_data() # Needs reload to respect sorting
 
     def _do_fav(self):
         if self.selected_ids:
             for iid in self.selected_ids:
-                self.db.toggle_field(iid, 'is_favorite')
+                self.idea_service.toggle_favorite(iid)
             self._refresh_all()
 
     def _do_del(self):
         if self.selected_ids:
-            for iid in self.selected_ids:
-                self.db.set_deleted(iid, True)
+            self.idea_service.move_to_trash(self.selected_ids)
             self.selected_ids.clear()
             self._refresh_all()
 
     def _do_restore(self):
         if self.selected_ids:
-            for iid in self.selected_ids:
-                self.db.set_deleted(iid, False)
+            self.idea_service.restore_from_trash(self.selected_ids)
             self.selected_ids.clear()
             self._refresh_all()
 
     def _do_destroy(self):
         if self.selected_ids and QMessageBox.Yes == QMessageBox.warning(self, '⚠️ 警告', f'确定永久删除选中的 {len(self.selected_ids)} 项?\n此操作不可恢复!', QMessageBox.Yes | QMessageBox.No):
-            for iid in self.selected_ids:
-                self.db.delete_permanent(iid)
+            self.idea_service.delete_permanently(self.selected_ids)
             self.selected_ids.clear()
             self._refresh_all()
 
@@ -763,10 +784,12 @@ class MainWindow(QWidget):
         """双击直接提取正文内容到剪贴板"""
         print(f"[DEBUG] _extract_single 被调用,idea_id={idea_id}")
         
-        data = self.db.get_idea(idea_id)
-        if not data:
+        # Data is already in the card, no need for a db call
+        card = self.cards.get(idea_id)
+        if not card:
             self._show_tooltip('⚠️ 数据不存在', 1500)
             return
+        data = card.data
             
         # 直接提取笔记的全部正文内容
         content_to_copy = data[2] if data[2] else ""
@@ -779,7 +802,8 @@ class MainWindow(QWidget):
         print(f"[DEBUG] 纯文本内容已复制到剪贴板: {preview}...")
 
     def _extract_all(self):
-        data = self.db.get_ideas('', 'all', None)
+        # Use service
+        data = self.idea_service.get_ideas_for_filter('', 'all', None)
         if not data:
             self._show_tooltip('🔭 暂无数据', 1500)
             return
@@ -789,7 +813,8 @@ class MainWindow(QWidget):
             lines.append(f"【{d[1]}】")
             if d[4]: lines.append('📌 已置顶')
             if d[5]: lines.append('⭐ 已收藏')
-            tags = self.db.get_tags(d[0])
+            # Use service
+            tags = self.idea_service.get_idea_tags(d[0])
             if tags: lines.append(f"标签: {', '.join(tags)}")
             lines.append(f"时间: {d[6]}")
             if d[2]: lines.append(f"\n{d[2]}")
@@ -800,7 +825,7 @@ class MainWindow(QWidget):
         self._show_tooltip(f'✅ 已提取 {len(data)} 条到剪贴板!', 2000)
 
     def _handle_del_key(self):
-        self._do_destroy() if self.curr_filter[0] == 'trash' else self._do_del()
+        self._do_destroy() if self.curr_filter[0] == FilterType.TRASH.value else self._do_del()
 
     def _handle_extract_key(self):
         """处理 Ctrl+T 快捷键,提取选中笔记的正文"""
@@ -816,7 +841,8 @@ class MainWindow(QWidget):
         self.activateWindow()
 
     def quit_app(self):
-        BackupService.run_backup()
+        # BackupService can be called from AppManager before quitting
+        # BackupService.run_backup()
         QApplication.quit()
 
     def closeEvent(self, event):

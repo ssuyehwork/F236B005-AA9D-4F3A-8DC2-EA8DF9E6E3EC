@@ -1,85 +1,84 @@
 # K Main_V3.py
 import sys
 import time
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtCore import QObject
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 
-# 导入窗口和数据库管理器
+# --- Refactored Imports ---
+# Core Infrastructure
+from core.logger import setup_logging
+from core.settings import load_setting
+
+# Data Layer
+from data.db_manager import get_db_connection, close_db_connection
+from data.repositories.idea_repository import IdeaRepository
+from data.repositories.tag_repository import TagRepository
+from data.repositories.category_repository import CategoryRepository
+
+# Service Layer
+from services.idea_service import IdeaService
+from services.clipboard_service import ClipboardService
+from services.hash_calculator import HashCalculator
+
+# UI Layer
 from ui.quick_window import QuickWindow
 from ui.main_window import MainWindow
 from ui.ball import FloatingBall
-from data.db_manager import DatabaseManager
-from core.settings import load_setting
 
 SERVER_NAME = "K_KUAIJIBIJI_SINGLE_INSTANCE_SERVER"
 
 class AppManager(QObject):
     """
-    应用程序管理器，负责协调 QuickWindow 和 MainWindow 的生命周期。
+    应用程序管理器，负责协调各个UI组件的生命周期和交互。
     """
-    def __init__(self, app):
+    def __init__(self, app, idea_service, clipboard_service):
         super().__init__()
         self.app = app
-        self.db_manager = None
+        # --- Dependency Injection ---
+        self.idea_service = idea_service
+        self.clipboard_service = clipboard_service
+        # ---
         self.main_window = None
         self.quick_window = None
         self.ball = None
 
     def start(self):
-        """初始化数据库、创建所有核心组件并启动应用"""
-        try:
-            self.db_manager = DatabaseManager()
-        except Exception as e:
-            print(f"❌ 数据库连接失败: {e}")
-            sys.exit(1)
-
-        # 1. 优先创建 MainWindow (但不显示)，因为悬浮球依赖它
-        self.main_window = MainWindow()
+        """创建所有核心组件并启动应用"""
+        # 1. 创建 MainWindow，它需要 IdeaService
+        self.main_window = MainWindow(self.idea_service)
         self.main_window.closing.connect(self.on_main_window_closing)
 
-        # 2. 创建并显示悬浮球
+        # 2. 创建悬浮球
         self.ball = FloatingBall(self.main_window)
         self.ball.request_show_quick_window.connect(self.show_quick_window)
         self.ball.double_clicked.connect(self.show_quick_window)
         self.ball.request_show_main_window.connect(self.show_main_window)
         self.ball.request_quit_app.connect(self.quit_application)
         
-        # 恢复悬浮球位置
         ball_pos = load_setting('floating_ball_pos')
         if ball_pos and isinstance(ball_pos, dict) and 'x' in ball_pos and 'y' in ball_pos:
             self.ball.move(ball_pos['x'], ball_pos['y'])
         else:
-            # 如果没有保存的位置，则使用默认位置
             g = QApplication.desktop().screenGeometry()
             self.ball.move(g.width()-80, g.height()//2)
-            
-        self.ball.show() # 悬浮球默认可见
+        self.ball.show()
 
-        # 3. 创建 QuickWindow (但不显示)
-        self.quick_window = QuickWindow(self.db_manager)
+        # 3. 创建 QuickWindow，它需要 IdeaService 和 ClipboardService
+        # (Note: The constructor for QuickWindow will be updated later)
+        self.quick_window = QuickWindow(self.idea_service, self.clipboard_service)
         self.quick_window.open_main_window_requested.connect(self.show_main_window)
-        # 默认启动时不显示 QuickWindow，由悬浮球唤出
-        # self.quick_window.show() 
 
     def show_quick_window(self):
-        """显示快速笔记窗口"""
+        """显示快速笔记窗口并置于顶层"""
         if self.quick_window:
             if self.quick_window.isMinimized():
                 self.quick_window.showNormal()
             self.quick_window.show()
             self.quick_window.activateWindow()
 
-    def toggle_quick_window(self):
-        """切换快速笔记窗口的显示/隐藏状态"""
-        if self.quick_window:
-            if self.quick_window.isVisible():
-                self.quick_window.hide()
-            else:
-                self.show_quick_window()
-
     def show_main_window(self):
-        """创建或显示主数据管理窗口"""
+        """显示主数据管理窗口并置于顶层"""
         if self.main_window:
             if self.main_window.isMinimized():
                 self.main_window.showNormal()
@@ -87,74 +86,73 @@ class AppManager(QObject):
             self.main_window.activateWindow()
 
     def on_main_window_closing(self):
-        """
-        处理 MainWindow 的关闭事件。
-        目前只是隐藏窗口，应用生命周期由 QuickWindow 控制。
-        """
         if self.main_window:
             self.main_window.hide()
             
     def quit_application(self):
         """退出整个应用程序"""
-        # 在这里可以添加清理逻辑，例如保存状态
         print("ℹ️  应用程序正在退出...")
         self.app.quit()
 
 def main():
     """主函数入口"""
+    setup_logging()
     app = QApplication(sys.argv)
     
-    # --- 单例应用检测 ---
+    # --- 单例应用检测 (健壮版本) ---
     socket = QLocalSocket()
     socket.connectToServer(SERVER_NAME)
 
-    # 如果能连接上服务器，说明已有实例在运行
     if socket.waitForConnected(500):
-        print("ℹ️  检测到旧实例，发送退出指令...")
-        # 发送 "EXIT" 消息给正在运行的实例
-        socket.write(b'EXIT')
+        print("ℹ️  检测到已运行实例，发送 'SHOW' 指令并退出...")
+        socket.write(b'SHOW')
         socket.flush()
         socket.waitForBytesWritten(1000)
         socket.disconnectFromServer()
-        
-        # 等待旧实例退出
-        print("⏳ 等待旧实例退出...")
-        time.sleep(0.5)
-        
-        # 清理可能残留的服务器，确保新实例可以监听
-        QLocalServer.removeServer(SERVER_NAME)
-        print("✅ 旧实例已清理")
+        sys.exit(0) # 正常退出新实例
     else:
-        # 如果连接不上，也清理一下，以防有僵尸服务器
+        # 清理可能残留的服务器，防止僵尸进程
         QLocalServer.removeServer(SERVER_NAME)
 
-    # 创建新的服务器（即当前实例）
     server = QLocalServer()
     if not server.listen(SERVER_NAME):
-        print(f"❌ 无法创建单例服务器: {server.errorString()}")
-        # 即使无法创建服务器，也继续运行，只是单例功能失效
+        QMessageBox.warning(None, "错误", f"无法创建单例服务: {server.errorString()}.")
+
+    # --- 依赖注入容器设置 ---
+    try:
+        db_conn = get_db_connection()
+    except Exception as e:
+        QMessageBox.critical(None, "数据库错误", f"数据库初始化失败: {e}\n应用即将退出。")
+        sys.exit(1)
+
+    # 1. 实例化 Repositories
+    idea_repo = IdeaRepository(db_conn)
+    tag_repo = TagRepository(db_conn)
+    category_repo = CategoryRepository(db_conn)
+
+    # 2. 实例化 Services
+    hash_calculator = HashCalculator()
+    idea_service = IdeaService(idea_repo, tag_repo, category_repo)
+    clipboard_service = ClipboardService(idea_repo, tag_repo, hash_calculator)
     
+    # 确保在应用退出时关闭数据库连接
+    app.aboutToQuit.connect(close_db_connection)
+
     # --- 启动应用 ---
-    manager = AppManager(app)
+    manager = AppManager(app, idea_service, clipboard_service)
 
     def handle_new_connection():
-        """处理来自新实例的连接"""
         conn = server.nextPendingConnection()
         if conn and conn.waitForReadyRead(500):
             msg = conn.readAll().data().decode()
             if msg == 'SHOW':
-                # 显示并激活快速笔记窗口
                 manager.show_quick_window()
-            elif msg == 'EXIT':
-                print("ℹ️  收到退出指令，准备退出...")
-                manager.quit_application()
 
     server.newConnection.connect(handle_new_connection)
     
     manager.start()
     
     sys.exit(app.exec_())
-
 
 if __name__ == '__main__':
     main()

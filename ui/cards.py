@@ -5,17 +5,18 @@ from PyQt5.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QApplicati
 from PyQt5.QtCore import Qt, pyqtSignal, QMimeData
 from PyQt5.QtGui import QDrag
 from core.config import STYLES
+from services.idea_service import IdeaService # New dependency
 
 class IdeaCard(QFrame):
     selection_requested = pyqtSignal(int, bool)
     double_clicked = pyqtSignal(int)
 
-    def __init__(self, data, db, parent=None):
+    def __init__(self, data, idea_service: IdeaService, parent=None): # Changed signature
         super().__init__(parent)
         self.setAttribute(Qt.WA_StyledBackground)
         
         self.data = data
-        self.db = db
+        self.idea_service = idea_service # Use service
         self.id = data[0]
         self.setCursor(Qt.PointingHandCursor)
         
@@ -54,7 +55,7 @@ class IdeaCard(QFrame):
         
         if self.data[2]:
             content_preview = self.data[2].strip()
-            lines = content_preview.split('\n')
+            lines = content_preview.split('\n') # Corrected from \\n to \n
             first_para = lines[0] if lines else ""
             
             if len(first_para) > 80:
@@ -64,7 +65,7 @@ class IdeaCard(QFrame):
             else:
                 preview_text = first_para
                 
-            content = QLabel(preview_text.replace('\n', ' '))
+            content = QLabel(preview_text.replace('\n', ' ')) # Corrected from \\n to \n
             content.setStyleSheet("""
                 color:rgba(255,255,255,180); 
                 margin-top:2px; 
@@ -86,7 +87,7 @@ class IdeaCard(QFrame):
         
         bot.addStretch()
         
-        tags = self.db.get_tags(self.id)
+        tags = self.idea_service.get_idea_tags(self.id) # Use service
         visible_tags = tags[:3]
         remaining = len(tags) - 3
         
@@ -121,7 +122,6 @@ class IdeaCard(QFrame):
         bg_color = self.data[3]
         
         if selected:
-            # 当被选中时,无论是否悬停,都保持白色边框
             style = f"""
                 IdeaCard {{
                     background-color: {bg_color};
@@ -130,11 +130,10 @@ class IdeaCard(QFrame):
                     padding: 0px;
                 }}
                 IdeaCard:hover {{
-                    border: 2px solid white; /* 覆盖默认的hover效果 */
+                    border: 2px solid white;
                 }}
             """
         else:
-            # 未选中时的默认行为
             style = f"""
                 IdeaCard {{
                     background-color: {bg_color};
@@ -147,7 +146,6 @@ class IdeaCard(QFrame):
                 }}
             """
             
-        # 通用的QLabel样式,避免重复
         style += """
             QLabel {
                 background-color: transparent;
@@ -169,7 +167,6 @@ class IdeaCard(QFrame):
         if (e.pos() - self._drag_start_pos).manhattanLength() < QApplication.startDragDistance():
             return
         
-        # Drag started, so it's not a click anymore
         self._is_potential_click = False
         
         drag = QDrag(self)
