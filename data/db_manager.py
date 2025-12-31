@@ -202,9 +202,9 @@ class DatabaseManager:
             if f_val is None: q += ' AND i.category_id IS NULL'
             else: q += ' AND i.category_id=?'; p.append(f_val)
         elif f_type == 'today': q += " AND date(i.updated_at,'localtime')=date('now','localtime')"
-        elif f_type == 'clipboard': q += " AND i.id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = '剪贴板'))"
         elif f_type == 'untagged': q += ' AND i.id NOT IN (SELECT idea_id FROM idea_tags)'
         elif f_type == 'favorite': q += ' AND i.is_favorite=1'
+        elif f_type == 'clipboard': q += " AND i.id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = '剪贴板'))"
         
         if search:
             # 修复: COALESCE(t.name, '') 确保即使没有标签的笔记也能在其他字段匹配时被搜到
@@ -335,7 +335,16 @@ class DatabaseManager:
         c.execute("SELECT COUNT(*) FROM ideas WHERE is_deleted=0 AND date(updated_at, 'localtime') = date('now', 'localtime')")
         counts['today_modified'] = c.fetchone()[0]
         
-        # 3. 按分区 (category) 统计
+        # 3. 剪贴板数据统计 (未删除)
+        c.execute("""
+            SELECT COUNT(*) FROM ideas i
+            JOIN idea_tags it ON i.id = it.idea_id
+            JOIN tags t ON it.tag_id = t.id
+            WHERE i.is_deleted = 0 AND t.name = '剪贴板'
+        """)
+        counts['clipboard'] = c.fetchone()[0]
+
+        # 4. 按分区 (category) 统计
         c.execute("SELECT category_id, COUNT(*) FROM ideas WHERE is_deleted=0 GROUP BY category_id")
         for cat_id, count in c.fetchall():
             # 在这个简化版本中，我们将 category_id 直接用作 partition_id

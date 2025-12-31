@@ -476,6 +476,8 @@ class QuickWindow(QWidget):
             if partition_data:
                 if partition_data.get('type') == 'today':
                     f_type, f_val = 'today', None
+                elif partition_data.get('type') == 'clipboard':
+                    f_type, f_val = 'clipboard', None
                 elif partition_data.get('type') == 'partition':
                     f_type, f_val = 'category', partition_data.get('id')
                 else: # all
@@ -541,6 +543,7 @@ class QuickWindow(QWidget):
         static_items = [
             ("全部数据", {'type': 'all', 'id': -1}, QStyle.SP_DirHomeIcon, counts.get('total', 0)),
             ("今日数据", {'type': 'today', 'id': -5}, QStyle.SP_FileDialogDetailedView, counts.get('today_modified', 0)),
+            ("剪贴板数据", {'type': 'clipboard', 'id': -6}, QStyle.SP_FileLinkIcon, counts.get('clipboard', 0)),
         ]
         
         for name, data, icon, count in static_items:
