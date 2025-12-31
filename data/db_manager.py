@@ -65,17 +65,23 @@ class DatabaseManager:
         self.conn.commit()
 
     # --- 核心 CRUD ---
-    def add_idea(self, title, content, color, tags, category_id=None):
+    def add_idea(self, title, content, color, tags, category_id=None, item_type='text', data_blob=None):
         c = self.conn.cursor()
-        c.execute('INSERT INTO ideas (title, content, color, category_id) VALUES (?,?,?,?)', (title, content, color, category_id))
+        c.execute(
+            'INSERT INTO ideas (title, content, color, category_id, item_type, data_blob) VALUES (?,?,?,?,?,?)',
+            (title, content, color, category_id, item_type, data_blob)
+        )
         iid = c.lastrowid
         self._update_tags(iid, tags)
         self.conn.commit()
-        return iid  # 返回新建的ID
+        return iid
 
-    def update_idea(self, iid, title, content, color, tags, category_id=None):
+    def update_idea(self, iid, title, content, color, tags, category_id=None, item_type='text', data_blob=None):
         c = self.conn.cursor()
-        c.execute('UPDATE ideas SET title=?, content=?, color=?, category_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', (title, content, color, category_id, iid))
+        c.execute(
+            'UPDATE ideas SET title=?, content=?, color=?, category_id=?, item_type=?, data_blob=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+            (title, content, color, category_id, item_type, data_blob, iid)
+        )
         self._update_tags(iid, tags)
         self.conn.commit()
 
@@ -169,9 +175,13 @@ class DatabaseManager:
         self.conn.commit()
 
     # --- 查询 ---
-    def get_idea(self, iid):
+    def get_idea(self, iid, include_blob=False):
         c = self.conn.cursor()
-        c.execute('SELECT * FROM ideas WHERE id=?', (iid,))
+        if include_blob:
+            c.execute('SELECT * FROM ideas WHERE id=?', (iid,))
+        else:
+            # 明确排除 data_blob
+            c.execute('SELECT id, title, content, color, is_pinned, is_favorite, created_at, updated_at, category_id, item_type FROM ideas WHERE id=?', (iid,))
         return c.fetchone()
 
     def get_ideas(self, search, f_type, f_val):

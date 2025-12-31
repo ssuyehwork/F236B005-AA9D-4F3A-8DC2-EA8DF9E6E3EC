@@ -188,8 +188,6 @@ class SearchLineEdit(QLineEdit):
         main_layout.setSpacing(0)
 
         # 创建流式布局容器
-        from PyQt5.QtWidgets import QScrollArea
-        
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)

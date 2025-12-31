@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGridLayout, QHBoxLayout,
 from PyQt5.QtGui import QKeySequence, QColor
 from PyQt5.QtCore import Qt
 from core.config import STYLES, COLORS
+from .components.rich_text_edit import RichTextEdit
 
 # 自定义深灰色滚动条样式
 SCROLLBAR_STYLE = """
@@ -179,8 +180,8 @@ class EditDialog(BaseDialog):
         right_panel.setSpacing(10)
         
         right_panel.addWidget(QLabel('📝 详细内容'))
-        self.content_inp = QTextEdit()
-        self.content_inp.setPlaceholderText("在这里记录详细内容...")
+        self.content_inp = RichTextEdit()
+        self.content_inp.setPlaceholderText("在这里记录详细内容（支持粘贴图片）...")
         self.content_inp.setStyleSheet("""
             QTextEdit {
                 background-color: #2a2a2a;
@@ -233,12 +234,19 @@ class EditDialog(BaseDialog):
             btn.setStyleSheet(f"QPushButton {{ {new_style} }}")
 
     def _load_data(self):
-        d = self.db.get_idea(self.idea_id)
+        # 在编辑时,需要加载完整数据,包括二进制blob
+        d = self.db.get_idea(self.idea_id, include_blob=True)
         if d:
             self.title_inp.setText(d[1])
             self.content_inp.setText(d[2])
             self._set_color(d[3])
             self.category_id = d[8]
+            
+            item_type = d[9]
+            data_blob = d[10]
+            if item_type == 'image' and data_blob:
+                self.content_inp.set_image_data(data_blob)
+
             self.tags_inp.setText(','.join(self.db.get_tags(self.idea_id)))
 
     def _save_data(self):
@@ -252,12 +260,17 @@ class EditDialog(BaseDialog):
         content = self.content_inp.toPlainText()
         color = self.selected_color
         
+        item_type = 'text'
+        data_blob = self.content_inp.get_image_data()
+        if data_blob:
+            item_type = 'image'
+
         if self.idea_id:
             # 更新模式
-            self.db.update_idea(self.idea_id, title, content, color, tags, self.category_id)
+            self.db.update_idea(self.idea_id, title, content, color, tags, self.category_id, item_type, data_blob)
         else:
             # 新建模式
-            self.db.add_idea(title, content, color, tags, category_id=self.category_id_for_new)
+            self.db.add_idea(title, content, color, tags, self.category_id_for_new, item_type, data_blob)
         
         self.accept()
 
@@ -363,3 +376,89 @@ class ExtractDialog(BaseDialog):
         btn.setStyleSheet(STYLES['btn_primary'])
         btn.clicked.connect(lambda: (QApplication.clipboard().setText(text), QMessageBox.information(self,'成功','✅ 内容已复制')))
         layout.addWidget(btn)
+
+# === 预览窗口 ===
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtWidgets import QDesktopWidget
+
+class PreviewDialog(QDialog):
+    def __init__(self, item_type, data, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.Popup)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        self._init_ui(item_type, data)
+
+        # 添加关闭快捷键
+        QShortcut(QKeySequence(Qt.Key_Escape), self, self.close)
+        QShortcut(QKeySequence(Qt.Key_Space), self, self.close)
+
+    def _init_ui(self, item_type, data):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        container = QWidget()
+        container.setStyleSheet(f"""
+            QWidget {{
+                background-color: {COLORS['bg_dark']};
+                border: 2px solid {COLORS['bg_mid']};
+                border-radius: 12px;
+            }}
+        """)
+        container_layout = QVBoxLayout(container)
+        main_layout.addWidget(container)
+
+        if item_type == 'text':
+            self._setup_text_preview(container_layout, data)
+        elif item_type == 'image':
+            self._setup_image_preview(container_layout, data)
+
+    def _setup_text_preview(self, layout, text_data):
+        self.resize(600, 500)
+        
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setText(text_data)
+        text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: transparent;
+                border: none;
+                padding: 15px;
+                color: #ddd;
+                font-size: 14px;
+            }}
+            {SCROLLBAR_STYLE}
+        """)
+        layout.addWidget(text_edit)
+
+    def _setup_image_preview(self, layout, image_data):
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_data)
+
+        if pixmap.isNull():
+            # 如果图片加载失败,显示错误信息
+            label = QLabel("无法加载图片")
+            label.setAlignment(Qt.AlignCenter)
+            label.setStyleSheet("color: #E81123; font-size: 16px;")
+            layout.addWidget(label)
+            self.resize(300, 200)
+            return
+            
+        label = QLabel()
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+
+        # 智能缩放
+        screen_geo = QDesktopWidget().availableGeometry(self)
+        max_width = screen_geo.width() * 0.8
+        max_height = screen_geo.height() * 0.8
+
+        scaled_pixmap = pixmap.scaled(int(max_width), int(max_height), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        label.setPixmap(scaled_pixmap)
+        
+        # 调整窗口大小以适应图片
+        self.resize(scaled_pixmap.width() + 20, scaled_pixmap.height() + 20)
+
+    def mousePressEvent(self, event):
+        # 点击任何地方都关闭
+        self.close()

@@ -13,7 +13,7 @@ from data.db_manager import DatabaseManager
 from services.backup_service import BackupService
 from ui.sidebar import Sidebar
 from ui.cards import IdeaCard
-from ui.dialogs import EditDialog
+from ui.dialogs import EditDialog, PreviewDialog
 from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 from ui.components.search_line_edit import SearchLineEdit
@@ -119,7 +119,44 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+P"), self, self._do_pin)
         QShortcut(QKeySequence("Delete"), self, self._handle_del_key)
         QShortcut(QKeySequence("Escape"), self, self._clear_tag_filter)
+        QShortcut(QKeySequence(Qt.Key_Space), self, self._show_preview)
 
+    def _show_preview(self):
+        """显示选中项的预览窗口"""
+        if len(self.selected_ids) != 1:
+            if len(self.selected_ids) > 1:
+                self._show_tooltip('⚠️ 请选择一个项目进行预览', 1500)
+            return
+
+        idea_id = list(self.selected_ids)[0]
+        idea = self.db.get_idea(idea_id, include_blob=True)
+        if not idea:
+            self._show_tooltip('⚠️ 找不到该项目', 1500)
+            return
+
+        # idea 结构: (id, title, content, color, pinned, fav, created, updated, cat_id, item_type, data_blob)
+        item_type = idea[9]
+        data_blob = idea[10]
+        content = idea[2]
+
+        preview_data = None
+        if item_type == 'image' and data_blob:
+            preview_data = data_blob
+        elif item_type == 'text' and content:
+            preview_data = content
+        else:
+            # 如果类型不匹配或数据为空,尝试使用正文作为备用
+            if content:
+                item_type = 'text'
+                preview_data = content
+            else:
+                self._show_tooltip('⚠️ 预览内容为空', 1500)
+                return
+
+        if preview_data:
+            dialog = PreviewDialog(item_type, preview_data, self)
+            dialog.exec_()
+    
     def _select_all(self):
         """全选当前视图中的所有卡片"""
         if not self.cards: return
@@ -677,7 +714,11 @@ class MainWindow(QWidget):
         if len(self.selected_ids) == 1:
             idea_id = list(self.selected_ids)[0]
             print(f"[DEBUG] ========== _do_edit 被调用 ========== idea_id={idea_id}")
-            if EditDialog(self.db, idea_id).exec_(): self._refresh_all()
+            
+            # 创建EditDialog实例,它现在需要完整的idea数据来初始化
+            dialog = EditDialog(self.db, idea_id=idea_id)
+            if dialog.exec_():
+                self._refresh_all()
 
     def _do_pin(self):
         if self.selected_ids:
