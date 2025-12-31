@@ -48,6 +48,12 @@ class MainWindow(QWidget):
         self._drag_pos = None
         self.current_tag_filter = None
         
+        # 【新增】滚动到底部提示标签
+        self.bottom_label = QLabel('我也是有底线的')
+        self.bottom_label.setStyleSheet("color:#666; font-size:12px; margin-top:10px; margin-bottom:5px;")
+        self.bottom_label.setAlignment(Qt.AlignCenter)
+        self.bottom_label.hide()
+
         # 调整大小相关变量
         self._resize_area = None
         self._resize_start_pos = None
@@ -267,6 +273,13 @@ class MainWindow(QWidget):
         scroll.setWidget(self.list_container)
         layout.addWidget(scroll)
         
+        layout.addWidget(self.bottom_label) # 添加标签到面板底部
+
+        self.scroll = scroll
+        v_bar = self.scroll.verticalScrollBar()
+        v_bar.valueChanged.connect(self._check_scroll_position)
+        v_bar.rangeChanged.connect(self._check_scroll_position)
+
         return panel
 
     def _create_tag_panel(self):
@@ -480,6 +493,28 @@ class MainWindow(QWidget):
         if search_text:
             self.search.add_history_entry(search_text)
 
+    def _check_scroll_position(self, *args):
+        """检查滚动条位置以确定是否显示'已到底'标签"""
+        # 延迟执行以确保获取到最新的UI尺寸
+        def check():
+            v_bar = self.scroll.verticalScrollBar()
+            has_content = self.list_layout.count() > 0
+
+            if not has_content:
+                self.bottom_label.hide()
+                return
+
+            # 检查滚动条是否可见（即内容是否溢出）
+            # v_bar.maximum() > 0 是一个可靠的判断内容是否溢出的方法
+            if v_bar.maximum() > 0:
+                is_at_bottom = (v_bar.value() >= v_bar.maximum())
+                self.bottom_label.setVisible(is_at_bottom)
+            else:
+                # 如果滚动条最大值为0，说明内容本身就没超出，直接显示
+                self.bottom_label.setVisible(True)
+
+        QTimer.singleShot(0, check)
+
     # ==================== 其余方法保持不变 ====================
     
     def quick_add_idea(self, text):
@@ -568,6 +603,9 @@ class MainWindow(QWidget):
             
         print(f"[DEBUG] 共创建 {len(self.cards)} 个卡片")
         self._update_ui_state()
+
+        # 确保在UI渲染完成后再检查滚动条状态
+        QTimer.singleShot(50, self._check_scroll_position)
 
     def _show_card_menu(self, idea_id, pos):
         # 如果右键点击的项不在当前选择中，则强制只选择该项
