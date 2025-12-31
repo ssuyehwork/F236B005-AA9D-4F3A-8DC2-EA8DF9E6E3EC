@@ -207,7 +207,8 @@ class DatabaseManager:
         elif f_type == 'favorite': q += ' AND i.is_favorite=1'
         
         if search:
-            q += ' AND (i.title LIKE ? OR i.content LIKE ? OR t.name LIKE ?)'
+            # 修复: COALESCE(t.name, '') 确保即使没有标签的笔记也能在其他字段匹配时被搜到
+            q += ' AND (i.title LIKE ? OR i.content LIKE ? OR COALESCE(t.name, \'\') LIKE ?)'
             p.extend([f'%{search}%']*3)
             
         # 【修改】排序逻辑
