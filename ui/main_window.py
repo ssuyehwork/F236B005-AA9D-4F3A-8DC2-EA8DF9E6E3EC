@@ -602,6 +602,9 @@ class MainWindow(QWidget):
             self.cards[d[0]] = c
             
         print(f"[DEBUG] 共创建 {len(self.cards)} 个卡片")
+
+        self.list_layout.addStretch() # 【新增】添加弹簧，消除多余滚动
+
         self._update_ui_state()
 
         # 确保在UI渲染完成后再检查滚动条状态
