@@ -13,10 +13,11 @@ from data.db_manager import DatabaseManager
 from services.backup_service import BackupService
 from ui.sidebar import Sidebar
 from ui.cards import IdeaCard
-from ui.dialogs import EditDialog, PreviewDialog
+from ui.dialogs import EditDialog
 from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 from ui.components.search_line_edit import SearchLineEdit
+from services.preview_service import PreviewService  # 【新增】导入预览服务
 
 class ContentContainer(QWidget):
     cleared = pyqtSignal()
@@ -37,6 +38,10 @@ class MainWindow(QWidget):
         super().__init__()
         print("[DEBUG] ========== MainWindow 初始化开始 ==========")
         self.db = DatabaseManager()
+        
+        # 【新增】初始化预览服务
+        self.preview_service = PreviewService(self.db, self)
+        
         self.curr_filter = ('all', None)
         self.selected_ids = set()
         self._drag_pos = None
@@ -119,44 +124,12 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+P"), self, self._do_pin)
         QShortcut(QKeySequence("Delete"), self, self._handle_del_key)
         QShortcut(QKeySequence("Escape"), self, self._clear_tag_filter)
-        QShortcut(QKeySequence(Qt.Key_Space), self, self._show_preview)
+        
+        # 【修改】使用 WindowShortcut 上下文绑定空格键
+        self.space_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
+        self.space_shortcut.setContext(Qt.WindowShortcut)
+        self.space_shortcut.activated.connect(lambda: self.preview_service.toggle_preview(self.selected_ids))
 
-    def _show_preview(self):
-        """显示选中项的预览窗口"""
-        if len(self.selected_ids) != 1:
-            if len(self.selected_ids) > 1:
-                self._show_tooltip('⚠️ 请选择一个项目进行预览', 1500)
-            return
-
-        idea_id = list(self.selected_ids)[0]
-        idea = self.db.get_idea(idea_id, include_blob=True)
-        if not idea:
-            self._show_tooltip('⚠️ 找不到该项目', 1500)
-            return
-
-        # idea 结构: (id, title, content, color, pinned, fav, created, updated, cat_id, item_type, data_blob)
-        item_type = idea[9]
-        data_blob = idea[10]
-        content = idea[2]
-
-        preview_data = None
-        if item_type == 'image' and data_blob:
-            preview_data = data_blob
-        elif item_type == 'text' and content:
-            preview_data = content
-        else:
-            # 如果类型不匹配或数据为空,尝试使用正文作为备用
-            if content:
-                item_type = 'text'
-                preview_data = content
-            else:
-                self._show_tooltip('⚠️ 预览内容为空', 1500)
-                return
-
-        if preview_data:
-            dialog = PreviewDialog(item_type, preview_data, self)
-            dialog.exec_()
-    
     def _select_all(self):
         """全选当前视图中的所有卡片"""
         if not self.cards: return
@@ -581,10 +554,10 @@ class MainWindow(QWidget):
             c = IdeaCard(d, self.db)
 
             c.selection_requested.connect(self._handle_selection_request)
-            print(f"[DEBUG] 卡片 ID={d[0]} selection_requested 信号连接完成")
+            # print(f"[DEBUG] 卡片 ID={d[0]} selection_requested 信号连接完成")
             
             c.double_clicked.connect(self._extract_single)
-            print(f"[DEBUG] 卡片 ID={d[0]} double_clicked 信号连接到 _extract_single")
+            # print(f"[DEBUG] 卡片 ID={d[0]} double_clicked 信号连接到 _extract_single")
             
             c.setContextMenuPolicy(Qt.CustomContextMenu)
             c.customContextMenuRequested.connect(lambda pos, iid=d[0]: self._show_card_menu(iid, pos))
