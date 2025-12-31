@@ -149,6 +149,60 @@ QPushButton#PinButton:hover { background-color: #444; }
 QPushButton#PinButton:checked { background-color: #0078D4; color: white; border: 1px solid #005A9E; }
 """
 
+# =================================================================================
+#   自定义控件 - 可拖拽删除的列表
+# =================================================================================
+class DragToDeleteListWidget(QListWidget):
+    """
+    一个特殊的 QListWidget, 支持将项目拖拽出窗口以删除它们。
+    """
+    item_deletion_requested = pyqtSignal(object)
+
+    def __init__(self, parent_window, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parent_window = parent_window
+        self._drag_start_position = QPoint()
+        self._dragged_item_data = None
+        self._is_drag_action = False
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if event.button() == Qt.LeftButton:
+            item = self.itemAt(event.pos())
+            if item:
+                self._drag_start_position = event.pos()
+                self._dragged_item_data = item.data(Qt.UserRole)
+                self._is_drag_action = False # 重置
+
+    def mouseMoveEvent(self, event):
+        # 只有在鼠标左键按下且有起始项目时才处理
+        if (event.buttons() & Qt.LeftButton) and self._dragged_item_data:
+            # 检查是否满足拖拽启动的距离
+            if (event.pos() - self._drag_start_position).manhattanLength() > QApplication.startDragDistance():
+                self._is_drag_action = True
+                # 标记为拖拽后，可以改变光标等提供视觉反馈
+                self.setCursor(Qt.DragMoveCursor)
+
+        # 无论如何都调用父类方法，以保持滚动等功能正常
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        is_outside = not self.parent_window.geometry().contains(event.globalPos())
+
+        # 如果这是一次拖拽操作（而不仅仅是点击），并且释放在窗口外部
+        if self._is_drag_action and is_outside and self._dragged_item_data:
+            self.item_deletion_requested.emit(self._dragged_item_data)
+        else:
+            # 如果不是删除操作，则调用父类的方法来处理正常的点击/激活事件
+            # 这非常重要，否则单击和双击将失效
+            super().mouseReleaseEvent(event)
+
+        # 重置所有状态
+        self.setCursor(Qt.ArrowCursor)
+        self._drag_start_position = QPoint()
+        self._dragged_item_data = None
+        self._is_drag_action = False
+
 class QuickWindow(QWidget):
     RESIZE_MARGIN = 18 
     open_main_window_requested = pyqtSignal()
@@ -193,6 +247,7 @@ class QuickWindow(QWidget):
         
         self.search_box.textChanged.connect(self._on_search_text_changed)
         self.list_widget.itemActivated.connect(self._on_item_activated)
+        self.list_widget.item_deletion_requested.connect(self._on_item_deleted_by_drag) # <-- 连接新信号
         self.partition_tree.currentItemChanged.connect(self._on_partition_selection_changed)
         
         self.clear_action.triggered.connect(self.search_box.clear)
@@ -314,7 +369,7 @@ class QuickWindow(QWidget):
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(4)
         
-        self.list_widget = QListWidget()
+        self.list_widget = DragToDeleteListWidget(self) # <-- 替换为自定义控件
         self.list_widget.setFocusPolicy(Qt.StrongFocus)
         self.list_widget.setAlternatingRowColors(True)
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -711,3 +766,18 @@ class QuickWindow(QWidget):
         self._update_list()
         self._update_partition_tree()
 
+    def _on_item_deleted_by_drag(self, item_data):
+        """处理拖拽删除请求"""
+        if not item_data:
+            return
+
+        idea_id = item_data[0] # 数据元组的第一个元素是 id
+        try:
+            self.db.soft_delete_idea(idea_id)
+            log(f"🗑️ 已通过拖拽将笔记 {idea_id} 移至回收站。")
+
+            # 刷新列表和分区计数
+            self._update_all_views()
+
+        except Exception as e:
+            log(f"❌ 拖拽删除笔记 {idea_id} 失败: {e}")
