@@ -67,8 +67,9 @@ class AppManager(QObject):
 
     def _on_quick_window_destroyed(self):
         """当快速笔记窗口被销毁时，重置实例变量"""
-        print("[DEBUG] QuickWindow destroyed. Setting instance to None.")
         self.quick_window = None
+        if self.main_window is None:
+            self.quit_application()
 
     def show_main_window(self):
         """如果主窗口不存在则创建，然后显示"""
@@ -84,8 +85,9 @@ class AppManager(QObject):
 
     def _on_main_window_destroyed(self):
         """当主窗口被销毁时，重置实例变量"""
-        print("[DEBUG] MainWindow destroyed. Setting instance to None.")
         self.main_window = None
+        if self.quick_window is None:
+            self.quit_application()
 
     def _on_new_idea_requested(self):
         """响应悬浮球的新建笔记请求"""
@@ -101,6 +103,8 @@ class AppManager(QObject):
         """退出整个应用程序"""
         # 在这里可以添加清理逻辑，例如保存状态
         print("ℹ️  应用程序正在退出...")
+        if self.ball:
+            self.ball.close()
         self.app.quit()
 
 def main():
