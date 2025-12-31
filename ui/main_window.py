@@ -127,7 +127,7 @@ class MainWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+P"), self, self._do_pin)
         QShortcut(QKeySequence("Delete"), self, self._handle_del_key)
         QShortcut(QKeySequence("Escape"), self, self._clear_tag_filter)
-        QShortcut(QKeySequence(Qt.Key_Space), self, self._show_preview)
+        self.preview_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self, self._show_preview)
 
     def _show_preview(self):
         """显示选中项的预览窗口"""
@@ -163,11 +163,14 @@ class MainWindow(QWidget):
                 return
 
         if preview_data:
-            dialog = PreviewDialog(item_type, preview_data, self)
-            dialog.exec_()
-            # 使用零延时定时器将焦点设置操作推迟到事件队列末尾，
-            # 避免按键事件冲突导致预览窗口立即重新打开。
-            QTimer.singleShot(0, self.list_container.setFocus)
+            self.preview_shortcut.setEnabled(False) # 禁用快捷键，防止冲突
+            try:
+                dialog = PreviewDialog(item_type, preview_data, self)
+                dialog.exec_()
+            finally:
+                self.preview_shortcut.setEnabled(True) # 重新启用快捷键
+                # 恢复焦点
+                self.list_container.setFocus()
     
     def _select_all(self):
         """全选当前视图中的所有卡片"""
