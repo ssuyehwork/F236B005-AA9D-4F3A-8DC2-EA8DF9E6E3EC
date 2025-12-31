@@ -126,8 +126,8 @@ class IdeaCard(QFrame):
     def update_selection(self, selected):
         bg_color = self.data['color']
 
-        # 如果数据来自剪贴板，则使用深灰色背景
-        if self.data['source'] == 'clipboard':
+        # 如果数据来自剪贴板且未分类，则使用深灰色背景
+        if self.data['source'] == 'clipboard' and self.data['category_id'] is None:
             bg_color = '#333333'  # A dark grey color
         
         # 基础样式
