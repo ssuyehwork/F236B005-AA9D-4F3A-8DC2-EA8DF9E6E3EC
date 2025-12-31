@@ -27,72 +27,75 @@ class AppManager(QObject):
         self.ball = None
 
     def start(self):
-        """初始化数据库、创建所有核心组件并启动应用"""
+        """初始化数据库、创建并显示悬浮球"""
         try:
             self.db_manager = DatabaseManager()
         except Exception as e:
             print(f"❌ 数据库连接失败: {e}")
             sys.exit(1)
 
-        # 1. 优先创建 MainWindow (但不显示)，因为悬浮球依赖它
-        self.main_window = MainWindow()
-        self.main_window.closing.connect(self.on_main_window_closing)
-
-        # 2. 创建并显示悬浮球
-        self.ball = FloatingBall(self.main_window)
+        # 创建并显示悬浮球
+        self.ball = FloatingBall() # 悬浮球不再需要主窗口实例
         self.ball.request_show_quick_window.connect(self.show_quick_window)
         self.ball.double_clicked.connect(self.show_quick_window)
         self.ball.request_show_main_window.connect(self.show_main_window)
         self.ball.request_quit_app.connect(self.quit_application)
+        self.ball.new_idea_requested.connect(self._on_new_idea_requested)
+        self.ball.quick_add_requested.connect(self._on_quick_add_requested)
         
         # 恢复悬浮球位置
         ball_pos = load_setting('floating_ball_pos')
         if ball_pos and isinstance(ball_pos, dict) and 'x' in ball_pos and 'y' in ball_pos:
             self.ball.move(ball_pos['x'], ball_pos['y'])
         else:
-            # 如果没有保存的位置，则使用默认位置
             g = QApplication.desktop().screenGeometry()
             self.ball.move(g.width()-80, g.height()//2)
             
-        self.ball.show() # 悬浮球默认可见
-
-        # 3. 创建 QuickWindow (但不显示)
-        self.quick_window = QuickWindow(self.db_manager)
-        self.quick_window.open_main_window_requested.connect(self.show_main_window)
-        # 默认启动时不显示 QuickWindow，由悬浮球唤出
-        # self.quick_window.show() 
+        self.ball.show()
 
     def show_quick_window(self):
-        """显示快速笔记窗口"""
-        if self.quick_window:
-            if self.quick_window.isMinimized():
-                self.quick_window.showNormal()
-            self.quick_window.show()
-            self.quick_window.activateWindow()
+        """如果快速笔记窗口不存在则创建，然后显示"""
+        if self.quick_window is None:
+            self.quick_window = QuickWindow(self.db_manager)
+            self.quick_window.open_main_window_requested.connect(self.show_main_window)
+            self.quick_window.destroyed.connect(self._on_quick_window_destroyed)
 
-    def toggle_quick_window(self):
-        """切换快速笔记窗口的显示/隐藏状态"""
-        if self.quick_window:
-            if self.quick_window.isVisible():
-                self.quick_window.hide()
-            else:
-                self.show_quick_window()
+        if self.quick_window.isMinimized():
+            self.quick_window.showNormal()
+        self.quick_window.show()
+        self.quick_window.activateWindow()
+
+    def _on_quick_window_destroyed(self):
+        """当快速笔记窗口被销毁时，重置实例变量"""
+        print("[DEBUG] QuickWindow destroyed. Setting instance to None.")
+        self.quick_window = None
 
     def show_main_window(self):
-        """创建或显示主数据管理窗口"""
-        if self.main_window:
-            if self.main_window.isMinimized():
-                self.main_window.showNormal()
-            self.main_window.show()
-            self.main_window.activateWindow()
+        """如果主窗口不存在则创建，然后显示"""
+        if self.main_window is None:
+            self.main_window = MainWindow()
+            # 注意：主窗口现在没有自定义信号需要连接，因为它会自行销毁
+            self.main_window.destroyed.connect(self._on_main_window_destroyed)
 
-    def on_main_window_closing(self):
-        """
-        处理 MainWindow 的关闭事件。
-        目前只是隐藏窗口，应用生命周期由 QuickWindow 控制。
-        """
-        if self.main_window:
-            self.main_window.hide()
+        if self.main_window.isMinimized():
+            self.main_window.showNormal()
+        self.main_window.show()
+        self.main_window.activateWindow()
+
+    def _on_main_window_destroyed(self):
+        """当主窗口被销毁时，重置实例变量"""
+        print("[DEBUG] MainWindow destroyed. Setting instance to None.")
+        self.main_window = None
+
+    def _on_new_idea_requested(self):
+        """响应悬浮球的新建笔记请求"""
+        self.show_main_window() # 确保主窗口存在
+        self.main_window.new_idea()
+
+    def _on_quick_add_requested(self, text):
+        """响应悬浮球的快速添加笔记请求"""
+        self.show_main_window() # 确保主窗口存在
+        self.main_window.quick_add_idea(text)
             
     def quit_application(self):
         """退出整个应用程序"""

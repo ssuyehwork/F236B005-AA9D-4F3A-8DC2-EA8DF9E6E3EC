@@ -274,6 +274,7 @@ class QuickWindow(QWidget):
         self.setWindowTitle("快速笔记")
         self.resize(830, 630)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
         
         self.root_layout = QVBoxLayout(self)
@@ -427,10 +428,7 @@ class QuickWindow(QWidget):
         # 保存状态
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("splitter_state", self.splitter.saveState())
-        # 隐藏窗口而不是关闭
-        self.hide()
-        # 忽略事件，阻止窗口被真正销毁
-        event.ignore()
+        super().closeEvent(event)
 
     # --- Mouse Logic ---
     def _get_resize_area(self, pos):

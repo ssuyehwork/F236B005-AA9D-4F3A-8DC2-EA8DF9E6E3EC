@@ -12,10 +12,11 @@ class FloatingBall(QWidget):
     request_show_main_window = pyqtSignal()
     request_quit_app = pyqtSignal()
     double_clicked = pyqtSignal()
+    new_idea_requested = pyqtSignal()
+    quick_add_requested = pyqtSignal(str)
 
-    def __init__(self, main_window):
+    def __init__(self):
         super().__init__()
-        self.mw = main_window 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setFixedSize(64, 64) 
@@ -166,7 +167,7 @@ class FloatingBall(QWidget):
         self.is_hovering = False
         text = e.mimeData().text()
         if text.strip():
-            self.mw.quick_add_idea(text)
+            self.quick_add_requested.emit(text)
             e.acceptProposedAction()
 
     def mousePressEvent(self, e):
@@ -198,7 +199,7 @@ class FloatingBall(QWidget):
         """)
         m.addAction('⚡ 打开快速笔记', self.request_show_quick_window.emit)
         m.addAction('💻 打开主界面', self.request_show_main_window.emit)
-        m.addAction('➕ 新建灵感', self.mw.new_idea)
+        m.addAction('➕ 新建灵感', self.new_idea_requested.emit)
         m.addSeparator()
         m.addAction('❌ 退出', self.request_quit_app.emit)
         m.exec_(e.globalPos())

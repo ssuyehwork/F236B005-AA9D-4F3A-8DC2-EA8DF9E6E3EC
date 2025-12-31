@@ -61,6 +61,7 @@ class MainWindow(QWidget):
         
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.setMouseTracking(True)
         
         self._setup_ui()
@@ -851,6 +852,7 @@ class MainWindow(QWidget):
         """
         重写关闭事件,使其发出 closing 信号而不是直接关闭。
         """
-        self.closing.emit()
-        self.hide()
-        event.ignore()
+        # self.closing.emit()
+        # self.hide()
+        # event.ignore()
+        super().closeEvent(event)
