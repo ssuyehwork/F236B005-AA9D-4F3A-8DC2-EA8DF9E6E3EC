@@ -98,22 +98,24 @@ class IdeaCard(QFrame):
         for tag in visible_tags:
             tag_label = QLabel(f"#{tag}")
 
-            # 根据标签名称设置不同样式
+            # 默认样式
+            style = """
+                background: rgba(255,255,255,0.1);
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 10px;
+                color: rgba(255,255,255,180);
+            """
+
+            # 为"剪贴板"标签应用独特的深灰色样式
             if tag == "剪贴板":
                 style = """
-                    background: #505050;
+                    background-color: #363636;
+                    border: 1px solid #454545;
                     border-radius: 4px;
                     padding: 2px 6px;
                     font-size: 10px;
                     color: #FFFFFF;
-                """
-            else:
-                style = """
-                    background: rgba(255,255,255,0.1);
-                    border-radius: 4px;
-                    padding: 2px 6px;
-                    font-size: 10px;
-                    color: rgba(255,255,255,180);
                 """
 
             tag_label.setStyleSheet(style)
