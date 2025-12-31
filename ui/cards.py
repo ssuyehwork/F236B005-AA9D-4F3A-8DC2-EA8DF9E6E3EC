@@ -84,6 +84,11 @@ class IdeaCard(QFrame):
         bot = QHBoxLayout()
         bot.setSpacing(6)
         
+        # 时间图标
+        clock_icon = QLabel('🕒')
+        clock_icon.setStyleSheet("color:rgba(255,255,255,100); font-size:11px; background:transparent;")
+        bot.addWidget(clock_icon)
+
         # 时间
         time_str = self.data['updated_at'][:16] # YYYY-MM-DD HH:mm
         time_label = QLabel(f'{time_str}')
