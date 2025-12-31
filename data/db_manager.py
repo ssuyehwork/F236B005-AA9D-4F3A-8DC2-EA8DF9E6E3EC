@@ -8,6 +8,7 @@ from core.config import DB_NAME
 class DatabaseManager:
     def __init__(self):
         self.conn = sqlite3.connect(DB_NAME)
+        self.conn.row_factory = sqlite3.Row
         self._init_schema()
 
     def _init_schema(self):
