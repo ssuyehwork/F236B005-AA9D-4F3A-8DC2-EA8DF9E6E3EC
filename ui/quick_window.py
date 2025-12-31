@@ -8,7 +8,7 @@ import datetime
 import subprocess  # <--- 新增导入，用于启动外部进程
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QListWidget, QLineEdit, 
                              QListWidgetItem, QHBoxLayout, QTreeWidget, QTreeWidgetItem, 
-                             QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, QLabel, QTreeWidgetItemIterator, QShortcut)
+                             QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, QLabel, QTreeWidgetItemIterator, QShortcut, QMenu)
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon, QKeySequence
 
@@ -149,6 +149,39 @@ QPushButton#PinButton:hover { background-color: #444; }
 QPushButton#PinButton:checked { background-color: #0078D4; color: white; border: 1px solid #005A9E; }
 """
 
+class DragToDeleteListWidget(QListWidget):
+    deletion_requested = pyqtSignal(int)
+    DRAG_THRESHOLD = 100  # 拖拽超过100像素触发删除
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.drag_start_pos = None
+        self.dragged_item = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_pos = event.pos()
+            self.dragged_item = self.itemAt(self.drag_start_pos)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton and self.drag_start_pos and self.dragged_item:
+            delta = event.pos() - self.drag_start_pos
+            if delta.x() > self.DRAG_THRESHOLD:
+                # 达到阈值，可以触发删除并重置
+                idea_id = self.dragged_item.data(Qt.UserRole)[0]
+                self.deletion_requested.emit(idea_id)
+                self.drag_start_pos = None # 防止重复触发
+                self.dragged_item = None
+                return # 阻止进一步的默认处理
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.drag_start_pos = None
+        self.dragged_item = None
+        super().mouseReleaseEvent(event)
+
+
 class QuickWindow(QWidget):
     RESIZE_MARGIN = 18 
     open_main_window_requested = pyqtSignal()
@@ -211,7 +244,31 @@ class QuickWindow(QWidget):
         
         self.partition_tree.currentItemChanged.connect(self._update_partition_status_display)
 
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
+        QShortcut(QKeySequence(Qt.Key_Delete), self, self._on_delete_shortcut)
+        QShortcut(QKeySequence("Ctrl+E"), self, self._on_favorite_shortcut)
+        QShortcut(QKeySequence("Ctrl+P"), self, self._on_pin_shortcut)
+
+    def _on_delete_shortcut(self):
+        item = self.list_widget.currentItem()
+        if item:
+            idea_id = item.data(Qt.UserRole)[0]
+            self._delete_item(idea_id)
+
+    def _on_favorite_shortcut(self):
+        item = self.list_widget.currentItem()
+        if item:
+            idea_id = item.data(Qt.UserRole)[0]
+            self._toggle_favorite(idea_id)
+
+    def _on_pin_shortcut(self):
+        item = self.list_widget.currentItem()
+        if item:
+            idea_id = item.data(Qt.UserRole)[0]
+            self._toggle_pinned(idea_id)
 
     def _init_ui(self):
         self.setWindowTitle("快速笔记")
@@ -314,11 +371,14 @@ class QuickWindow(QWidget):
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(4)
         
-        self.list_widget = QListWidget()
+        self.list_widget = DragToDeleteListWidget()
+        self.list_widget.deletion_requested.connect(self._delete_item)
         self.list_widget.setFocusPolicy(Qt.StrongFocus)
         self.list_widget.setAlternatingRowColors(True)
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
 
         self.partition_tree = QTreeWidget()
         self.partition_tree.setHeaderHidden(True)
@@ -714,3 +774,44 @@ class QuickWindow(QWidget):
         self._update_list()
         self._update_partition_tree()
 
+    # --- 右键菜单逻辑 ---
+    def _show_context_menu(self, pos):
+        item = self.list_widget.itemAt(pos)
+        if not item:
+            return
+
+        idea_data = item.data(Qt.UserRole)
+        idea_id = idea_data[0] # id is the first element
+        is_favorite = idea_data[5] # is_favorite is the 6th element
+        is_pinned = idea_data[4] # is_pinned is the 5th element
+
+        menu = QMenu(self)
+
+        fav_action = QAction("收藏" if not is_favorite else "取消收藏", self)
+        fav_action.triggered.connect(lambda: self._toggle_favorite(idea_id))
+        menu.addAction(fav_action)
+
+        pin_action = QAction("置顶" if not is_pinned else "取消置顶", self)
+        pin_action.triggered.connect(lambda: self._toggle_pinned(idea_id))
+        menu.addAction(pin_action)
+
+        menu.addSeparator()
+
+        delete_action = QAction("删除", self)
+        delete_action.triggered.connect(lambda: self._delete_item(idea_id))
+        menu.addAction(delete_action)
+
+        menu.exec_(self.list_widget.mapToGlobal(pos))
+
+    def _toggle_favorite(self, idea_id):
+        self.db.toggle_field(idea_id, "is_favorite")
+        self._update_all_views()
+
+    def _toggle_pinned(self, idea_id):
+        self.db.toggle_field(idea_id, "is_pinned")
+        self._update_all_views()
+
+    def _delete_item(self, idea_id):
+        # 假设is_deleted=1表示放入回收站
+        self.db.set_deleted(idea_id, 1)
+        self._update_all_views()
