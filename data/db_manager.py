@@ -250,6 +250,17 @@ class DatabaseManager:
         c.execute('UPDATE categories SET name=? WHERE id=?', (new_name, cat_id))
         self.conn.commit()
 
+    def get_or_create_category_by_name(self, name):
+        """根据名称查找分类,如果不存在则创建"""
+        c = self.conn.cursor()
+        c.execute('SELECT id FROM categories WHERE name=?', (name,))
+        result = c.fetchone()
+        if result:
+            return result['id']
+        else:
+            self.add_category(name)
+            return c.lastrowid
+
     def delete_category(self, cid):
         c = self.conn.cursor()
         c.execute('UPDATE ideas SET category_id=NULL WHERE category_id=?', (cid,))
