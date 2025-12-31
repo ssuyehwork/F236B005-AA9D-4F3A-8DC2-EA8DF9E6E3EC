@@ -4,10 +4,11 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGridLayout, QHBoxLayout,
                               QProgressBar, QFrame, QApplication, QMessageBox, QShortcut,
                              QSpacerItem, QSizePolicy, QSplitter, QWidget, QScrollBar,
                              QGraphicsDropShadowEffect)
-from PyQt5.QtGui import QKeySequence, QColor
+from PyQt5.QtGui import QKeySequence, QColor, QPixmap
 from PyQt5.QtCore import Qt
 from core.config import STYLES, COLORS
 from .components.rich_text_edit import RichTextEdit
+from services.idea_service import IdeaService # New dependency
 
 # 自定义深灰色滚动条样式
 SCROLLBAR_STYLE = """
@@ -56,20 +57,14 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 class BaseDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        # 设置窗口标志,支持透明背景
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        
-        # 创建主容器
         self._setup_container()
     
     def _setup_container(self):
-        """设置带阴影的主容器"""
-        # 外层布局,留出阴影空间
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(15, 15, 15, 15)
         
-        # 内容容器
         self.content_container = QWidget()
         self.content_container.setObjectName("DialogContainer")
         self.content_container.setStyleSheet(f"""
@@ -81,7 +76,6 @@ class BaseDialog(QDialog):
         
         outer_layout.addWidget(self.content_container)
         
-        # 添加现代化阴影
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(30)
         shadow.setXOffset(0)
@@ -89,23 +83,21 @@ class BaseDialog(QDialog):
         shadow.setColor(QColor(0, 0, 0, 120))
         self.content_container.setGraphicsEffect(shadow)
         
-        # 返回内容容器,子类可以在其中添加布局
         return self.content_container
 
-# === 编辑窗口 (支持左右拉伸 & 深色滚动条 & 阴影) ===
+# === 编辑窗口 ===
 class EditDialog(BaseDialog):
-    def __init__(self, db, idea_id=None, parent=None, category_id_for_new=None):
+    def __init__(self, idea_service: IdeaService, idea_id=None, parent=None, category_id_for_new=None): # Changed signature
         super().__init__(parent)
-        self.db = db
+        self.idea_service = idea_service # Use service
         self.idea_id = idea_id
         self.selected_color = COLORS['primary']
-        self.category_id = None # 用于加载已存在的数据
-        self.category_id_for_new = category_id_for_new # 用于新建
+        self.category_id = None
+        self.category_id_for_new = category_id_for_new
         
         self._init_ui()
         if idea_id: self._load_data()
         
-        # 使对话框可拖动
         self._drag_pos = None
 
     def _init_ui(self):
@@ -117,17 +109,10 @@ class EditDialog(BaseDialog):
         
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setStyleSheet(f"""
-            QSplitter::handle {{
-                background-color: {COLORS['bg_mid']};
-                width: 2px;
-                margin: 0 5px;
-            }}
-            QSplitter::handle:hover {{
-                background-color: {COLORS['primary']};
-            }}
+            QSplitter::handle {{ background-color: {COLORS['bg_mid']}; width: 2px; margin: 0 5px; }}
+            QSplitter::handle:hover {{ background-color: {COLORS['primary']}; }}
         """)
         
-        # ================= 左侧容器 =================
         left_container = QWidget()
         left_panel = QVBoxLayout(left_container)
         left_panel.setContentsMargins(15, 15, 15, 15)
@@ -173,7 +158,6 @@ class EditDialog(BaseDialog):
         self.save_btn.clicked.connect(self._save_data)
         left_panel.addWidget(self.save_btn)
         
-        # ================= 右侧容器 =================
         right_container = QWidget()
         right_panel = QVBoxLayout(right_container)
         right_panel.setContentsMargins(15, 15, 15, 15)
@@ -182,23 +166,12 @@ class EditDialog(BaseDialog):
         right_panel.addWidget(QLabel('📝 详细内容'))
         self.content_inp = RichTextEdit()
         self.content_inp.setPlaceholderText("在这里记录详细内容（支持粘贴图片）...")
-        self.content_inp.setStyleSheet("""
-            QTextEdit {
-                background-color: #2a2a2a;
-                border: 1px solid #444;
-                border-radius: 8px;
-                padding: 10px;
-                font-size: 14px;
-                color: #eee;
-            }
-        """)
+        self.content_inp.setStyleSheet("QTextEdit { background-color: #2a2a2a; border: 1px solid #444; border-radius: 8px; padding: 10px; font-size: 14px; color: #eee; }")
         right_panel.addWidget(self.content_inp)
         
         self.splitter.addWidget(left_container)
         self.splitter.addWidget(right_container)
         self.splitter.setSizes([300, 650])
-        self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 1)
         
         main_layout.addWidget(self.splitter)
         
@@ -207,35 +180,28 @@ class EditDialog(BaseDialog):
         self._set_color(self.selected_color)
 
     def mousePressEvent(self, e):
-        """使对话框可拖动"""
         if e.button() == Qt.LeftButton and e.pos().y() < 40:
             self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
             e.accept()
 
     def mouseMoveEvent(self, e):
-        """拖动对话框"""
         if e.buttons() == Qt.LeftButton and self._drag_pos:
             self.move(e.globalPos() - self._drag_pos)
             e.accept()
 
     def mouseReleaseEvent(self, e):
-        """结束拖动"""
         self._drag_pos = None
 
     def _set_color(self, color):
         self.selected_color = color
         for btn in self.color_btns:
-            style = btn.styleSheet()
-            if color in style:
-                new_style = f"background-color: {color}; border-radius: 17px; border: 3px solid white;"
-            else:
-                bg = style.split('background-color:')[1].split(';')[0].strip()
-                new_style = f"background-color: {bg}; border-radius: 17px; border: 2px solid transparent;"
-            btn.setStyleSheet(f"QPushButton {{ {new_style} }}")
+            is_selected = color in btn.styleSheet()
+            border_style = "3px solid white" if is_selected else "2px solid transparent"
+            bg_color = color if is_selected else btn.styleSheet().split('background-color:')[1].split(';')[0].strip()
+            btn.setStyleSheet(f"QPushButton {{ background-color: {bg_color}; border-radius: 17px; border: {border_style}; }}")
 
     def _load_data(self):
-        # 在编辑时,需要加载完整数据,包括二进制blob
-        d = self.db.get_idea(self.idea_id, include_blob=True)
+        d = self.idea_service.get_idea_with_blob(self.idea_id) # Use service
         if d:
             self.title_inp.setText(d[1])
             self.content_inp.setText(d[2])
@@ -247,7 +213,7 @@ class EditDialog(BaseDialog):
             if item_type == 'image' and data_blob:
                 self.content_inp.set_image_data(data_blob)
 
-            self.tags_inp.setText(','.join(self.db.get_tags(self.idea_id)))
+            self.tags_inp.setText(','.join(self.idea_service.get_idea_tags(self.idea_id))) # Use service
 
     def _save_data(self):
         title = self.title_inp.text().strip()
@@ -265,18 +231,17 @@ class EditDialog(BaseDialog):
         if data_blob:
             item_type = 'image'
 
+        # Use service
         if self.idea_id:
-            # 更新模式
-            self.db.update_idea(self.idea_id, title, content, color, tags, self.category_id, item_type, data_blob)
+            self.idea_service.update_idea(self.idea_id, title, content, color, tags, self.category_id, item_type, data_blob)
         else:
-            # 新建模式
-            self.db.add_idea(title, content, color, tags, self.category_id_for_new, item_type, data_blob)
+            self.idea_service.add_idea(title, content, color, tags, self.category_id_for_new, item_type, data_blob)
         
         self.accept()
 
 # === 看板窗口 ===
 class StatsDialog(BaseDialog):
-    def __init__(self, db, parent=None):
+    def __init__(self, idea_service: IdeaService, parent=None): # Changed signature
         super().__init__(parent)
         self.setWindowTitle('📊 数据看板')
         self.resize(550, 450)
@@ -285,28 +250,27 @@ class StatsDialog(BaseDialog):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
         
-        counts = db.get_counts()
+        counts = idea_service.get_stats_counts() # Use service
         grid = QGridLayout()
         grid.setSpacing(15)
-        grid.addWidget(self._box("📚 总灵感", counts['all'], COLORS['primary']), 0, 0)
-        grid.addWidget(self._box("📅 今日新增", counts['today'], COLORS['success']), 0, 1)
-        grid.addWidget(self._box("⭐ 我的收藏", counts['favorite'], COLORS['warning']), 1, 0)
-        grid.addWidget(self._box("🏷️ 待整理", counts['untagged'], COLORS['danger']), 1, 1)
+        grid.addWidget(self._box("📚 总灵感", counts.get('all', 0), COLORS['primary']), 0, 0)
+        grid.addWidget(self._box("📅 今日新增", counts.get('today', 0), COLORS['success']), 0, 1)
+        grid.addWidget(self._box("⭐ 我的收藏", counts.get('favorite', 0), COLORS['warning']), 1, 0)
+        grid.addWidget(self._box("🏷️ 待整理", counts.get('untagged', 0), COLORS['danger']), 1, 1)
         layout.addLayout(grid)
         
         layout.addSpacing(10)
         layout.addWidget(QLabel("🔥 热门标签 Top 5"))
         
-        stats = db.get_top_tags()
+        stats = idea_service.get_all_tags_with_counts() # Use service
         if not stats:
             layout.addWidget(QLabel("暂无标签数据", styleSheet="color:#666; font-style:italic; font-weight:normal;"))
         else:
-            max_val = stats[0][1]
+            max_val = stats[0][1] if stats else 1
             for name, cnt in stats:
                 h = QHBoxLayout()
                 lbl = QLabel(f"#{name}")
                 lbl.setFixedWidth(80)
-                lbl.setStyleSheet("color:#eee; font-weight:bold; margin:0;")
                 h.addWidget(lbl)
                 
                 p = QProgressBar()
@@ -314,19 +278,7 @@ class StatsDialog(BaseDialog):
                 p.setValue(cnt)
                 p.setFixedHeight(18)
                 p.setFormat(f" {cnt}")
-                p.setStyleSheet(f"""
-                    QProgressBar {{
-                        background-color: {COLORS['bg_mid']};
-                        border: none;
-                        border-radius: 9px;
-                        color: white;
-                        text-align: center;
-                    }}
-                    QProgressBar::chunk {{
-                        background-color: {COLORS['primary']};
-                        border-radius: 9px;
-                    }}
-                """)
+                p.setStyleSheet(f"QProgressBar {{ background-color: {COLORS['bg_mid']}; border: none; border-radius: 9px; color: white; text-align: center; }} QProgressBar::chunk {{ background-color: {COLORS['primary']}; border-radius: 9px; }}")
                 h.addWidget(p)
                 layout.addLayout(h)
                 
@@ -341,7 +293,6 @@ class StatsDialog(BaseDialog):
         f = QFrame()
         f.setStyleSheet(f"QFrame {{ background-color: {c}15; border: 1px solid {c}40; border-radius: 10px; }}")
         vl = QVBoxLayout(f)
-        vl.setContentsMargins(15, 15, 15, 15)
         lbl_title = QLabel(t)
         lbl_title.setStyleSheet(f"color:{c}; font-size:13px; font-weight:bold; border:none; margin:0;")
         lbl_val = QLabel(str(v))
@@ -352,7 +303,7 @@ class StatsDialog(BaseDialog):
 
 # === 提取窗口 ===
 class ExtractDialog(BaseDialog):
-    def __init__(self, db, parent=None):
+    def __init__(self, idea_service: IdeaService, parent=None): # Changed signature
         super().__init__(parent)
         self.setWindowTitle('📋 提取内容')
         self.resize(700, 600)
@@ -365,9 +316,14 @@ class ExtractDialog(BaseDialog):
         self.txt.setPlaceholderText("暂无数据...")
         layout.addWidget(self.txt)
         
-        data = db.get_ideas('', 'all', None)
-        text = '\n' + '-'*60 + '\n'
-        text += '\n'.join([f"【{d[1]}】\n{d[2]}\n" + '-'*60 for d in data])
+        data = idea_service.get_ideas_for_filter('', FilterType.ALL.value, None) # Use service
+        lines = ['='*60, '💡 灵感闪记 - 内容导出', '='*60, '']
+        for d in data:
+            lines.append(f"【{d[1]}】")
+            if d[2]: lines.append(f"\n{d[2]}")
+            lines.append('\n'+'-'*60+'\n')
+
+        text = '\n'.join(lines)
         self.txt.setText(text)
         
         layout.addSpacing(10)
@@ -378,7 +334,6 @@ class ExtractDialog(BaseDialog):
         layout.addWidget(btn)
 
 # === 预览窗口 ===
-from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtWidgets import QDesktopWidget
 
 class PreviewDialog(QDialog):
@@ -389,7 +344,6 @@ class PreviewDialog(QDialog):
         
         self._init_ui(item_type, data)
 
-        # 添加关闭快捷键
         QShortcut(QKeySequence(Qt.Key_Escape), self, self.close)
         QShortcut(QKeySequence(Qt.Key_Space), self, self.close)
 
@@ -398,13 +352,7 @@ class PreviewDialog(QDialog):
         main_layout.setContentsMargins(0, 0, 0, 0)
         
         container = QWidget()
-        container.setStyleSheet(f"""
-            QWidget {{
-                background-color: {COLORS['bg_dark']};
-                border: 2px solid {COLORS['bg_mid']};
-                border-radius: 12px;
-            }}
-        """)
+        container.setStyleSheet(f"background-color: {COLORS['bg_dark']}; border: 2px solid {COLORS['bg_mid']}; border-radius: 12px;")
         container_layout = QVBoxLayout(container)
         main_layout.addWidget(container)
 
@@ -419,16 +367,7 @@ class PreviewDialog(QDialog):
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         text_edit.setText(text_data)
-        text_edit.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: transparent;
-                border: none;
-                padding: 15px;
-                color: #ddd;
-                font-size: 14px;
-            }}
-            {SCROLLBAR_STYLE}
-        """)
+        text_edit.setStyleSheet(f"QTextEdit {{ background-color: transparent; border: none; padding: 15px; color: #ddd; font-size: 14px; }} {SCROLLBAR_STYLE}")
         layout.addWidget(text_edit)
 
     def _setup_image_preview(self, layout, image_data):
@@ -436,7 +375,6 @@ class PreviewDialog(QDialog):
         pixmap.loadFromData(image_data)
 
         if pixmap.isNull():
-            # 如果图片加载失败,显示错误信息
             label = QLabel("无法加载图片")
             label.setAlignment(Qt.AlignCenter)
             label.setStyleSheet("color: #E81123; font-size: 16px;")
@@ -448,7 +386,6 @@ class PreviewDialog(QDialog):
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
 
-        # 智能缩放
         screen_geo = QDesktopWidget().availableGeometry(self)
         max_width = screen_geo.width() * 0.8
         max_height = screen_geo.height() * 0.8
@@ -456,9 +393,7 @@ class PreviewDialog(QDialog):
         scaled_pixmap = pixmap.scaled(int(max_width), int(max_height), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         label.setPixmap(scaled_pixmap)
         
-        # 调整窗口大小以适应图片
         self.resize(scaled_pixmap.width() + 20, scaled_pixmap.height() + 20)
 
     def mousePressEvent(self, event):
-        # 点击任何地方都关闭
         self.close()
