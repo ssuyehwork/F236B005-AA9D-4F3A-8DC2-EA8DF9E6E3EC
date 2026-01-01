@@ -8,10 +8,10 @@ from PyQt5.QtGui import QPainter, QColor, QFont, QPen, QBrush
 from core.settings import save_setting
 
 class FloatingBall(QWidget):
-    request_show_quick_window = pyqtSignal()
+    request_show_quick_window = pyqtSignal(QPoint)
     request_show_main_window = pyqtSignal()
     request_quit_app = pyqtSignal()
-    double_clicked = pyqtSignal()
+    double_clicked = pyqtSignal(QPoint)
 
     def __init__(self, main_window):
         super().__init__()
@@ -214,7 +214,7 @@ class FloatingBall(QWidget):
 
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.LeftButton:
-            self.double_clicked.emit()
+            self.double_clicked.emit(e.globalPos())
 
     def contextMenuEvent(self, e):
         m = QMenu(self)
@@ -224,7 +224,7 @@ class FloatingBall(QWidget):
             QMenu::item:selected { background-color: #00f3ff; color: #000; border-radius: 2px;}
             QMenu::separator { background-color: #333; height: 1px; margin: 5px 0; }
         """)
-        m.addAction('⚡ 打开快速笔记', self.request_show_quick_window.emit)
+        m.addAction('⚡ 打开快速笔记', lambda: self.request_show_quick_window.emit(e.globalPos()))
         m.addAction('💻 打开主界面', self.request_show_main_window.emit)
         m.addAction('➕ 新建灵感', self.mw.new_idea)
         m.addSeparator()
