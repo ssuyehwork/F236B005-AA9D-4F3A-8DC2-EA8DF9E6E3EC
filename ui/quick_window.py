@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QListWidget, QL
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject, QSize
 from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon, QKeySequence, QDrag
 from services.preview_service import PreviewService
+from ui.dialogs import EditDialog
 
 # =================================================================================
 #   Win32 API 定义
@@ -200,6 +201,7 @@ class QuickWindow(QWidget):
         super().__init__()
         self.db = db_manager
         self.settings = QSettings("MyTools", "RapidNotes")
+        self.open_dialogs = []
         
         self.m_drag = False
         self.m_DragPosition = QPoint()
@@ -433,12 +435,38 @@ class QuickWindow(QWidget):
         action_fav = menu.addAction("⭐ 取消收藏" if is_fav else "⭐ 收藏")
         action_fav.triggered.connect(self._do_toggle_favorite)
 
+        action_edit = menu.addAction("✏️ 编辑")
+        action_edit.triggered.connect(self._do_edit_selected)
+
         menu.addSeparator()
 
         action_del = menu.addAction("🗑️ 删除")
         action_del.triggered.connect(self._do_delete_selected)
 
         menu.exec_(self.list_widget.mapToGlobal(pos))
+
+    def _do_edit_selected(self):
+        idea_id = self._get_selected_id()
+        if not idea_id:
+            return
+
+        # 检查是否已存在此 idea_id 的对话框
+        for dialog in self.open_dialogs:
+            if dialog.idea_id == idea_id:
+                dialog.activateWindow()
+                return
+
+        dialog = EditDialog(self.db, idea_id, self)
+        dialog.setAttribute(Qt.WA_DeleteOnClose)
+        dialog.accepted.connect(self._update_list)
+        dialog.finished.connect(lambda: self._on_dialog_finished(dialog))
+
+        self.open_dialogs.append(dialog)
+        dialog.show()
+
+    def _on_dialog_finished(self, dialog):
+        if dialog in self.open_dialogs:
+            self.open_dialogs.remove(dialog)
 
     def _copy_item_content(self, data):
         item_type_idx = 10
