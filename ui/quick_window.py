@@ -8,7 +8,7 @@ import datetime
 import subprocess  # <--- 新增导入，用于启动外部进程
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QListWidget, QLineEdit, 
                              QListWidgetItem, QHBoxLayout, QTreeWidget, QTreeWidgetItem, 
-                             QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, QLabel, QTreeWidgetItemIterator, QShortcut)
+                             QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, QLabel, QTreeWidgetItemIterator, QShortcut, QMenu)
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon, QKeySequence
 
@@ -114,12 +114,12 @@ QListWidget, QTreeWidget {
 }
 QListWidget::item { padding: 8px; border: none; }
 QListWidget::item:selected, QTreeWidget::item:selected {
-    background-color: #4a90e2; color: #FFFFFF;
+    background-color: #27ae60; color: #FFFFFF;
 }
 QListWidget::item:hover { background-color: #444444; }
 
 QSplitter::handle { background-color: #333333; width: 2px; }
-QSplitter::handle:hover { background-color: #4a90e2; }
+QSplitter::handle:hover { background-color: #27ae60; }
 
 QLineEdit {
     background-color: #252526;
@@ -146,7 +146,7 @@ QPushButton#CloseButton:hover { background-color: #E81123; color: white; }
 
 /* 置顶按钮特殊状态 */
 QPushButton#PinButton:hover { background-color: #444; }
-QPushButton#PinButton:checked { background-color: #0078D4; color: white; border: 1px solid #005A9E; }
+QPushButton#PinButton:checked { background-color: #27ae60; color: white; border: 1px solid #2ecc71; }
 """
 
 class QuickWindow(QWidget):
@@ -193,6 +193,7 @@ class QuickWindow(QWidget):
         
         self.search_box.textChanged.connect(self._on_search_text_changed)
         self.list_widget.itemActivated.connect(self._on_item_activated)
+        self.list_widget.customContextMenuRequested.connect(self._show_context_menu) # 右键菜单
         self.partition_tree.currentItemChanged.connect(self._on_partition_selection_changed)
         
         self.clear_action.triggered.connect(self.search_box.clear)
@@ -212,6 +213,11 @@ class QuickWindow(QWidget):
         self.partition_tree.currentItemChanged.connect(self._update_partition_status_display)
 
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
+
+        # --- 添加快捷键 ---
+        QShortcut(QKeySequence("Ctrl+E"), self, self._toggle_favorite)
+        QShortcut(QKeySequence("Ctrl+D"), self, self._toggle_pinned)
+
 
     def _init_ui(self):
         self.setWindowTitle("快速笔记")
@@ -317,6 +323,7 @@ class QuickWindow(QWidget):
         self.list_widget = QListWidget()
         self.list_widget.setFocusPolicy(Qt.StrongFocus)
         self.list_widget.setAlternatingRowColors(True)
+        self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu) # 开启自定义右键菜单
         self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
@@ -613,6 +620,61 @@ class QuickWindow(QWidget):
             user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_FLAGS)
         else:
             user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_FLAGS)
+
+    def _show_context_menu(self, position):
+        """在指定位置显示右键菜单"""
+        item = self.list_widget.itemAt(position)
+        if not item:
+            return
+
+        menu = QMenu(self)
+
+        item_data = item.data(Qt.UserRole)
+        if not item_data:
+            return
+
+        is_pinned = item_data[4]
+        is_favorite = item_data[5]
+
+        # 添加收藏/取消收藏操作
+        favorite_text = "取消收藏" if is_favorite else "收藏"
+        favorite_action = QAction(favorite_text, self)
+        favorite_action.triggered.connect(self._toggle_favorite)
+        menu.addAction(favorite_action)
+
+        # 添加置顶/取消置顶操作
+        pin_text = "取消置顶" if is_pinned else "置顶"
+        pin_action = QAction(pin_text, self)
+        pin_action.triggered.connect(self._toggle_pinned)
+        menu.addAction(pin_action)
+
+        menu.exec_(self.list_widget.mapToGlobal(position))
+
+    def _toggle_favorite(self):
+        """切换选中项的收藏状态"""
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+        item_data = current_item.data(Qt.UserRole)
+        if not item_data:
+            return
+
+        idea_id = item_data[0] # id in tuple
+        self.db.toggle_field(idea_id, 'is_favorite')
+        self._update_list()
+
+    def _toggle_pinned(self):
+        """切换选中项的置顶状态"""
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+        item_data = current_item.data(Qt.UserRole)
+        if not item_data:
+            return
+
+        idea_id = item_data[0] # id in tuple
+        self.db.toggle_field(idea_id, 'is_pinned')
+        self._update_list()
 
     def _on_item_activated(self, item):
         item_tuple = item.data(Qt.UserRole)
