@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # ui/cards.py
 import sys
-from PyQt5.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QApplication
-from PyQt5.QtCore import Qt, pyqtSignal, QMimeData
-from PyQt5.QtGui import QDrag
+from PyQt5.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QApplication, QSizePolicy
+from PyQt5.QtCore import Qt, pyqtSignal, QMimeData, QSize
+from PyQt5.QtGui import QDrag, QPixmap, QImage
 from core.config import STYLES
 
 class IdeaCard(QFrame):
@@ -32,16 +32,17 @@ class IdeaCard(QFrame):
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 12, 15, 12)
-        layout.setSpacing(6) 
+        layout.setSpacing(8) # 增加一点内部间距
         
-        # --- 顶部：标题 + 图标 ---
+        # --- 1. 顶部：标题 + 图标 ---
         top = QHBoxLayout()
         top.setSpacing(8)
         
-        # 标题
-        title = QLabel(self.data[1])
+        # 标题 (对于图片，如果标题是默认的"[图片]"，可以显示得淡一点，或者保持原样)
+        title_text = self.data[1]
+        title = QLabel(title_text)
         title.setStyleSheet("font-size:15px; font-weight:bold; background:transparent; color:white;")
-        title.setWordWrap(False) # 标题单行显示，超出显示省略号
+        title.setWordWrap(False)
         top.addWidget(title, stretch=1)
         
         # 图标区域 (置顶/收藏)
@@ -59,36 +60,67 @@ class IdeaCard(QFrame):
         top.addLayout(icon_layout)
         layout.addLayout(top)
         
-        # --- 中部：内容预览 ---
-        if self.data[2]:
-            content_str = self.data[2].strip()
-            
-            # 获取一段较长的文本，让 Label 自动换行
-            preview_text = content_str[:300].replace('\n', ' ').replace('\r', '')
-            if len(content_str) > 300:
-                preview_text += "..."
+        # --- 2. 中部：内容预览 (文本 或 图片) ---
+        # 解析数据类型
+        # data结构: 0:id, 1:title, 2:content ... 10:item_type, 11:data_blob
+        item_type = self.data[10] if len(self.data) > 10 and self.data[10] else 'text'
+        
+        if item_type == 'image':
+            # === 图片模式 ===
+            blob_data = self.data[11] if len(self.data) > 11 else None
+            if blob_data:
+                pixmap = QPixmap()
+                pixmap.loadFromData(blob_data)
                 
-            content = QLabel(preview_text)
-            content.setStyleSheet("""
-                color: rgba(255,255,255,180); 
-                margin-top: 2px; 
-                background: transparent; 
-                font-size: 13px;
-                line-height: 1.4;
-            """)
-            content.setWordWrap(True) # 允许自动换行
-            content.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-            # 限制高度，大概显示 3 行文字的高度
-            content.setMaximumHeight(65) 
-            layout.addWidget(content)
+                if not pixmap.isNull():
+                    img_label = QLabel()
+                    # 限制最大显示高度，防止卡片过大
+                    max_height = 160
+                    if pixmap.height() > max_height:
+                        pixmap = pixmap.scaledToHeight(max_height, Qt.SmoothTransformation)
+                    
+                    # 如果宽度也太宽，限制宽度
+                    if pixmap.width() > 400: # 假设卡片大概这么宽
+                        pixmap = pixmap.scaledToWidth(400, Qt.SmoothTransformation)
+                        
+                    img_label.setPixmap(pixmap)
+                    img_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    img_label.setStyleSheet("background: transparent; border-radius: 4px;")
+                    layout.addWidget(img_label)
+                else:
+                    err_label = QLabel("[图片无法加载]")
+                    err_label.setStyleSheet("color: #666; font-style: italic;")
+                    layout.addWidget(err_label)
+        else:
+            # === 文本/文件模式 ===
+            if self.data[2]:
+                content_str = self.data[2].strip()
+                
+                # 获取一段较长的文本，让 Label 自动换行
+                preview_text = content_str[:300].replace('\n', ' ').replace('\r', '')
+                if len(content_str) > 300:
+                    preview_text += "..."
+                    
+                content = QLabel(preview_text)
+                content.setStyleSheet("""
+                    color: rgba(255,255,255,180); 
+                    margin-top: 2px; 
+                    background: transparent; 
+                    font-size: 13px;
+                    line-height: 1.4;
+                """)
+                content.setWordWrap(True)
+                content.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+                # 限制高度，大概显示 3 行文字的高度
+                content.setMaximumHeight(65) 
+                layout.addWidget(content)
             
-        # --- 底部：时间 + 标签 ---
+        # --- 3. 底部：时间 + 标签 ---
         bot = QHBoxLayout()
         bot.setSpacing(6)
         
-        # 时间 (带时钟图标)
+        # 时间
         time_str = self.data[7][:16] # YYYY-MM-DD HH:mm
-        # 【修改】添加时钟图标前缀
         time_label = QLabel(f'🕒 {time_str}')
         time_label.setStyleSheet("color:rgba(255,255,255,100); font-size:11px; background:transparent;")
         bot.addWidget(time_label)

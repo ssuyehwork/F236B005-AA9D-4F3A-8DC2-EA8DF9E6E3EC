@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # ui/main_window.py
 import sys
+import math
 from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLineEdit,
                                QPushButton, QLabel, QScrollArea, QShortcut, QMessageBox,
                                QApplication, QToolTip, QMenu, QFrame, QTextEdit, QDialog,
-                               QGraphicsDropShadowEffect, QLayout, QSizePolicy)
+                               QGraphicsDropShadowEffect, QLayout, QSizePolicy, QInputDialog)
 from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal, QRect, QSize
-from PyQt5.QtGui import QKeySequence, QCursor, QColor
+from PyQt5.QtGui import QKeySequence, QCursor, QColor, QIntValidator
 from core.config import STYLES, COLORS
 from core.settings import load_setting
 from data.db_manager import DatabaseManager
@@ -136,7 +137,18 @@ class MainWindow(QWidget):
         self._resize_start_pos = None
         self._resize_start_geometry = None
         
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        # 分页状态
+        self.current_page = 1
+        self.page_size = 20
+        self.total_pages = 1
+        
+        self.setWindowFlags(
+            Qt.FramelessWindowHint | 
+            Qt.Window | 
+            Qt.WindowSystemMenuHint | 
+            Qt.WindowMinimizeButtonHint | 
+            Qt.WindowMaximizeButtonHint
+        )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMouseTracking(True)
         
@@ -247,9 +259,56 @@ class MainWindow(QWidget):
             QLineEdit { border-radius: 14px; padding-right: 25px; }
             QLineEdit::clear-button { image: url(assets/clear.png); subcontrol-position: right; margin-right: 5px; }
         """)
-        self.search.textChanged.connect(self._load_data)
+        self.search.textChanged.connect(lambda: self._set_page(1))
         self.search.returnPressed.connect(self._add_search_to_history)
         layout.addWidget(self.search)
+        
+        layout.addSpacing(10)
+        
+        # --- 分页控件区域 ---
+        page_btn_style = """
+            QPushButton { background-color: transparent; border: 1px solid #444; color: #aaa; border-radius: 4px; font-size: 11px; padding: 2px 8px; min-width: 20px; }
+            QPushButton:hover { background-color: #333; color: white; border-color: #666; }
+            QPushButton:disabled { color: #444; border-color: #333; }
+        """
+        
+        self.btn_first = QPushButton("<<")
+        self.btn_first.setStyleSheet(page_btn_style)
+        self.btn_first.setToolTip("首页")
+        self.btn_first.clicked.connect(lambda: self._set_page(1))
+        
+        self.btn_prev = QPushButton("<")
+        self.btn_prev.setStyleSheet(page_btn_style)
+        self.btn_prev.setToolTip("上一页")
+        self.btn_prev.clicked.connect(lambda: self._set_page(self.current_page - 1))
+        
+        self.page_input = QLineEdit()
+        self.page_input.setFixedWidth(40)
+        self.page_input.setAlignment(Qt.AlignCenter)
+        self.page_input.setValidator(QIntValidator(1, 9999))
+        self.page_input.setStyleSheet("background-color: #2D2D2D; border: 1px solid #444; color: #DDD; border-radius: 4px; padding: 2px;")
+        self.page_input.returnPressed.connect(self._jump_to_page)
+        
+        self.total_page_label = QLabel("/ 1")
+        self.total_page_label.setStyleSheet("color: #888; font-size: 12px; margin-left: 2px; margin-right: 5px;")
+        
+        self.btn_next = QPushButton(">")
+        self.btn_next.setStyleSheet(page_btn_style)
+        self.btn_next.setToolTip("下一页")
+        self.btn_next.clicked.connect(lambda: self._set_page(self.current_page + 1))
+        
+        self.btn_last = QPushButton(">>")
+        self.btn_last.setStyleSheet(page_btn_style)
+        self.btn_last.setToolTip("末页")
+        self.btn_last.clicked.connect(lambda: self._set_page(self.total_pages))
+        
+        layout.addWidget(self.btn_first)
+        layout.addWidget(self.btn_prev)
+        layout.addWidget(self.page_input)
+        layout.addWidget(self.total_page_label)
+        layout.addWidget(self.btn_next)
+        layout.addWidget(self.btn_last)
+        
         layout.addStretch()
         
         ctrl_btn_style = f"QPushButton {{ background-color: transparent; border: none; color: #aaa; border-radius: 6px; font-size: 16px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; }} QPushButton:hover {{ background-color: rgba(255,255,255,0.1); color: white; }}"
@@ -257,6 +316,7 @@ class MainWindow(QWidget):
         extract_btn = QPushButton('📤')
         extract_btn.setToolTip('批量提取全部')
         extract_btn.setStyleSheet(f"QPushButton {{ background-color: {COLORS['primary']}; border: none; color: white; border-radius: 6px; font-size: 18px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; }} QPushButton:hover {{ background-color: #357abd; }}")
+        # 确保这里调用了 self._extract_all
         extract_btn.clicked.connect(self._extract_all)
         layout.addWidget(extract_btn)
         
@@ -283,6 +343,32 @@ class MainWindow(QWidget):
         layout.addWidget(close_btn)
         
         return titlebar
+
+    # --- 分页逻辑 ---
+    def _set_page(self, page_num):
+        if page_num < 1: page_num = 1
+        self.current_page = page_num
+        self._load_data()
+
+    def _jump_to_page(self):
+        text = self.page_input.text().strip()
+        if text.isdigit():
+            page = int(text)
+            self._set_page(page)
+        else:
+            self.page_input.setText(str(self.current_page))
+
+    def _update_pagination_ui(self):
+        self.page_input.setText(str(self.current_page))
+        self.total_page_label.setText(f"/ {self.total_pages}")
+        
+        is_first = (self.current_page <= 1)
+        is_last = (self.current_page >= self.total_pages)
+        
+        self.btn_first.setDisabled(is_first)
+        self.btn_prev.setDisabled(is_first)
+        self.btn_next.setDisabled(is_last)
+        self.btn_last.setDisabled(is_last)
 
     def _create_middle_panel(self):
         panel = QWidget()
@@ -359,7 +445,7 @@ class MainWindow(QWidget):
         self.tag_input.setPlaceholderText("🔍 搜索...")
         self.tag_input.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #333337; 
+                background-color: #2D2D2D; 
                 border: 1px solid #444;
                 border-radius: 16px; /* 全圆角胶囊 */
                 padding: 6px 12px; 
@@ -444,17 +530,25 @@ class MainWindow(QWidget):
         menu.addSeparator()
         menu.addAction("🗑️ 删除该标签 (全局)", lambda: self._delete_tag_action(tag_name))
         
-        # 在鼠标位置弹出
         menu.exec_(QCursor.pos())
 
-    # 【核心修改】自定义输入弹窗 (替代 QInputDialog)
+    def _rename_tag_action(self, old_name):
+        new_name, ok = self._show_custom_input_dialog("重命名标签", "请输入新名称:", old_name)
+        if ok and new_name and new_name.strip():
+            self.db.rename_tag(old_name, new_name.strip())
+            self._refresh_all()
+
+    def _delete_tag_action(self, tag_name):
+        if self._show_custom_confirm_dialog("删除标签", f"确定要彻底删除标签 #{tag_name} 吗？\n所有引用该标签的数据都将解除关联。"):
+            self.db.delete_tag(tag_name)
+            self._refresh_all()
+
     def _show_custom_input_dialog(self, title, label_text, default_text=""):
         dlg = QDialog(self)
         dlg.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         dlg.setAttribute(Qt.WA_TranslucentBackground)
         dlg.setFixedSize(320, 160)
         
-        # 布局容器
         container = QWidget(dlg)
         container.setGeometry(0, 0, 320, 160)
         container.setStyleSheet(f"""
@@ -469,12 +563,10 @@ class MainWindow(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # 标题
         lbl = QLabel(label_text)
         lbl.setStyleSheet("color: #DDD; font-size: 14px; font-weight: bold; border: none;")
         layout.addWidget(lbl)
         
-        # 输入框
         inp = QLineEdit(default_text)
         inp.setStyleSheet(f"""
             QLineEdit {{
@@ -487,10 +579,9 @@ class MainWindow(QWidget):
             }}
             QLineEdit:focus {{ border: 1px solid {COLORS['primary']}; }}
         """)
-        inp.selectAll() # 自动全选方便修改
+        inp.selectAll()
         layout.addWidget(inp)
         
-        # 按钮组
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
@@ -524,7 +615,6 @@ class MainWindow(QWidget):
             return inp.text(), True
         return "", False
 
-    # 【核心修改】自定义确认弹窗 (替代 QMessageBox)
     def _show_custom_confirm_dialog(self, title, msg):
         dlg = QDialog(self)
         dlg.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
@@ -545,12 +635,10 @@ class MainWindow(QWidget):
         layout.setContentsMargins(25, 25, 25, 20)
         layout.setSpacing(15)
         
-        # 标题/警告
         title_lbl = QLabel(f"⚠️  {title}")
         title_lbl.setStyleSheet(f"color: {COLORS['danger']}; font-size: 15px; font-weight: bold; border: none;")
         layout.addWidget(title_lbl)
         
-        # 内容
         content_lbl = QLabel(msg)
         content_lbl.setWordWrap(True)
         content_lbl.setStyleSheet("color: #CCC; font-size: 13px; border: none; line-height: 1.4;")
@@ -558,7 +646,6 @@ class MainWindow(QWidget):
         
         layout.addStretch()
         
-        # 按钮
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
@@ -589,19 +676,6 @@ class MainWindow(QWidget):
         layout.addLayout(btn_layout)
         
         return dlg.exec_() == QDialog.Accepted
-
-    def _rename_tag_action(self, old_name):
-        # 使用自定义输入框
-        new_name, ok = self._show_custom_input_dialog("重命名标签", "请输入新名称:", old_name)
-        if ok and new_name and new_name.strip():
-            self.db.rename_tag(old_name, new_name.strip())
-            self._refresh_all() 
-
-    def _delete_tag_action(self, tag_name):
-        # 使用自定义确认框
-        if self._show_custom_confirm_dialog("删除标签", f"确定要彻底删除标签 #{tag_name} 吗？\n所有引用该标签的数据都将解除关联。"):
-            self.db.delete_tag(tag_name)
-            self._refresh_all()
 
     def _refresh_tag_panel(self):
         while self.tag_list_layout.count():
@@ -716,6 +790,7 @@ class MainWindow(QWidget):
             self._clear_tag_filter()
         else:
             self.current_tag_filter = tag_name
+            self._set_page(1)
             self.tag_filter_label.setText(f'🏷️ {tag_name}')
             self.tag_filter_label.show()
             self.clear_tag_btn.show()
@@ -867,7 +942,17 @@ class MainWindow(QWidget):
             if w: w.deleteLater()
         self.cards = {}
         self.card_ordered_ids = []
-        data_list = self.db.get_ideas(self.search.text(), *self.curr_filter)
+        
+        # 【核心补充】此处必须先计算总数，否则分页控件全是 1/1
+        total_items = self.db.get_ideas_count(self.search.text(), *self.curr_filter)
+        self.total_pages = math.ceil(total_items / self.page_size) if total_items > 0 else 1
+        
+        # 修正页码范围
+        if self.current_page > self.total_pages: self.current_page = self.total_pages
+        if self.current_page < 1: self.current_page = 1
+
+        data_list = self.db.get_ideas(self.search.text(), *self.curr_filter, page=self.current_page, page_size=self.page_size)
+        
         if self.current_tag_filter:
             filtered = []
             for d in data_list:
@@ -885,6 +970,8 @@ class MainWindow(QWidget):
             self.list_layout.addWidget(c)
             self.cards[d[0]] = c
             self.card_ordered_ids.append(d[0])
+            
+        self._update_pagination_ui() # 刷新页码显示
         self._update_ui_state()
 
     def _show_card_menu(self, idea_id, pos):
@@ -1035,6 +1122,7 @@ class MainWindow(QWidget):
         preview = content_to_copy.replace('\n', ' ')[:40] + ('...' if len(content_to_copy) > 40 else '')
         self._show_tooltip(f'✅ 内容已提取到剪贴板\n\n📋 {preview}', 2500)
 
+    # 【补充方法】_extract_all
     def _extract_all(self):
         data = self.db.get_ideas('', 'all', None)
         if not data:

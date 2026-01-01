@@ -63,7 +63,6 @@ class DatabaseManager:
             
         self.conn.commit()
 
-    # --- 核心 CRUD ---
     def add_idea(self, title, content, color=None, tags=[], category_id=None, item_type='text', data_blob=None):
         if color is None:
             color = COLORS['default_note']
@@ -88,7 +87,6 @@ class DatabaseManager:
         self.conn.commit()
 
     def _update_tags(self, iid, tags):
-        """完全替换标签（先删后加）"""
         c = self.conn.cursor()
         c.execute('DELETE FROM idea_tags WHERE idea_id=?', (iid,))
         if not tags: return
@@ -101,7 +99,6 @@ class DatabaseManager:
                 c.execute('INSERT INTO idea_tags VALUES (?,?)', (iid, tid))
 
     def _append_tags(self, iid, tags):
-        """追加标签（不删除旧标签）"""
         c = self.conn.cursor()
         for t in tags:
             t = t.strip()
@@ -111,18 +108,15 @@ class DatabaseManager:
                 tid = c.fetchone()[0]
                 c.execute('INSERT OR IGNORE INTO idea_tags VALUES (?,?)', (iid, tid))
 
-    # --- 批量标签操作 ---
     def add_tags_to_multiple_ideas(self, idea_ids, tags_list):
         if not idea_ids or not tags_list: return
         c = self.conn.cursor()
         for tag_name in tags_list:
             tag_name = tag_name.strip()
             if not tag_name: continue
-            
             c.execute('INSERT OR IGNORE INTO tags (name) VALUES (?)', (tag_name,))
             c.execute('SELECT id FROM tags WHERE name=?', (tag_name,))
             tid = c.fetchone()[0]
-            
             for iid in idea_ids:
                 c.execute('INSERT OR IGNORE INTO idea_tags (idea_id, tag_id) VALUES (?,?)', (iid, tid))
         self.conn.commit()
@@ -134,7 +128,6 @@ class DatabaseManager:
         res = c.fetchone()
         if not res: return
         tid = res[0]
-        
         placeholders = ','.join('?' * len(idea_ids))
         sql = f'DELETE FROM idea_tags WHERE tag_id=? AND idea_id IN ({placeholders})'
         c.execute(sql, (tid, *idea_ids))
@@ -153,51 +146,6 @@ class DatabaseManager:
         '''
         c.execute(sql, tuple(idea_ids))
         return [r[0] for r in c.fetchall()]
-
-    # 【新增】重命名标签 (自动处理合并)
-    def rename_tag(self, old_name, new_name):
-        new_name = new_name.strip()
-        if not new_name or old_name == new_name: return
-
-        c = self.conn.cursor()
-        
-        # 获取旧ID
-        c.execute("SELECT id FROM tags WHERE name=?", (old_name,))
-        old_res = c.fetchone()
-        if not old_res: return
-        old_id = old_res[0]
-
-        # 检查新名称是否已存在
-        c.execute("SELECT id FROM tags WHERE name=?", (new_name,))
-        new_res = c.fetchone()
-
-        try:
-            if new_res:
-                # 合并模式：将所有旧ID的关联转移到新ID
-                new_id = new_res[0]
-                c.execute("UPDATE OR IGNORE idea_tags SET tag_id=? WHERE tag_id=?", (new_id, old_id))
-                c.execute("DELETE FROM idea_tags WHERE tag_id=?", (old_id,)) # 删除多余的关联
-                c.execute("DELETE FROM tags WHERE id=?", (old_id,)) # 删除旧标签定义
-            else:
-                # 纯改名模式
-                c.execute("UPDATE tags SET name=? WHERE id=?", (new_name, old_id))
-            self.conn.commit()
-        except Exception as e:
-            print(f"[DB] Rename tag failed: {e}")
-            self.conn.rollback()
-
-    # 【新增】彻底删除标签
-    def delete_tag(self, tag_name):
-        c = self.conn.cursor()
-        c.execute("SELECT id FROM tags WHERE name=?", (tag_name,))
-        res = c.fetchone()
-        if res:
-            tag_id = res[0]
-            c.execute("DELETE FROM idea_tags WHERE tag_id=?", (tag_id,))
-            c.execute("DELETE FROM tags WHERE id=?", (tag_id,))
-            self.conn.commit()
-
-    # ---------------------------
 
     def add_clipboard_item(self, item_type, content, data_blob=None, category_id=None):
         c = self.conn.cursor()
@@ -232,7 +180,6 @@ class DatabaseManager:
                 (title, content, item_type, data_blob, category_id, content_hash, default_color)
             )
             idea_id = c.lastrowid
-            
             self._update_tags(idea_id, ["剪贴板"])
             self.conn.commit()
             return idea_id
@@ -282,9 +229,48 @@ class DatabaseManager:
             c.execute('SELECT id, title, content, color, is_pinned, is_favorite, created_at, updated_at, category_id, item_type FROM ideas WHERE id=?', (iid,))
         return c.fetchone()
 
-    def get_ideas(self, search, f_type, f_val):
+    # 【核心修改】支持分页查询
+    def get_ideas(self, search, f_type, f_val, page=None, page_size=20):
         c = self.conn.cursor()
         q = "SELECT DISTINCT i.* FROM ideas i LEFT JOIN idea_tags it ON i.id=it.idea_id LEFT JOIN tags t ON it.tag_id=t.id WHERE 1=1"
+        p = []
+        
+        # 1. 构建过滤条件 (与下面的 count 方法逻辑必须一致)
+        if f_type == 'trash': q += ' AND i.is_deleted=1'
+        else: q += ' AND (i.is_deleted=0 OR i.is_deleted IS NULL)'
+        
+        if f_type == 'category':
+            if f_val is None: q += ' AND i.category_id IS NULL'
+            else: q += ' AND i.category_id=?'; p.append(f_val)
+        elif f_type == 'today': q += " AND date(i.updated_at,'localtime')=date('now','localtime')"
+        elif f_type == 'clipboard': q += " AND i.id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = '剪贴板'))"
+        elif f_type == 'untagged': q += ' AND i.id NOT IN (SELECT idea_id FROM idea_tags)'
+        elif f_type == 'favorite': q += ' AND i.is_favorite=1'
+        
+        if search:
+            q += ' AND (i.title LIKE ? OR i.content LIKE ? OR t.name LIKE ?)'
+            p.extend([f'%{search}%']*3)
+            
+        # 2. 排序
+        if f_type == 'trash':
+            q += ' ORDER BY i.updated_at DESC'
+        else:
+            q += ' ORDER BY i.is_pinned DESC, i.updated_at DESC'
+            
+        # 3. 分页 (如果传入了 page)
+        if page is not None and page_size is not None:
+            limit = page_size
+            offset = (page - 1) * page_size
+            q += ' LIMIT ? OFFSET ?'
+            p.extend([limit, offset])
+            
+        c.execute(q, p)
+        return c.fetchall()
+
+    # 【新增】获取符合条件的总记录数 (用于计算总页数)
+    def get_ideas_count(self, search, f_type, f_val):
+        c = self.conn.cursor()
+        q = "SELECT COUNT(DISTINCT i.id) FROM ideas i LEFT JOIN idea_tags it ON i.id=it.idea_id LEFT JOIN tags t ON it.tag_id=t.id WHERE 1=1"
         p = []
         
         if f_type == 'trash': q += ' AND i.is_deleted=1'
@@ -302,13 +288,8 @@ class DatabaseManager:
             q += ' AND (i.title LIKE ? OR i.content LIKE ? OR t.name LIKE ?)'
             p.extend([f'%{search}%']*3)
             
-        if f_type == 'trash':
-            q += ' ORDER BY i.updated_at DESC'
-        else:
-            q += ' ORDER BY i.is_pinned DESC, i.updated_at DESC'
-            
         c.execute(q, p)
-        return c.fetchall()
+        return c.fetchone()[0]
 
     def get_tags(self, iid):
         c = self.conn.cursor()
@@ -460,4 +441,37 @@ class DatabaseManager:
             c.execute("ROLLBACK")
             print(f"[ERROR] 保存分类结构失败: {e}")
         finally:
+            self.conn.commit()
+
+    # --- 标签管理 ---
+    def rename_tag(self, old_name, new_name):
+        new_name = new_name.strip()
+        if not new_name or old_name == new_name: return
+        c = self.conn.cursor()
+        c.execute("SELECT id FROM tags WHERE name=?", (old_name,))
+        old_res = c.fetchone()
+        if not old_res: return
+        old_id = old_res[0]
+        c.execute("SELECT id FROM tags WHERE name=?", (new_name,))
+        new_res = c.fetchone()
+        try:
+            if new_res:
+                new_id = new_res[0]
+                c.execute("UPDATE OR IGNORE idea_tags SET tag_id=? WHERE tag_id=?", (new_id, old_id))
+                c.execute("DELETE FROM idea_tags WHERE tag_id=?", (old_id,))
+                c.execute("DELETE FROM tags WHERE id=?", (old_id,))
+            else:
+                c.execute("UPDATE tags SET name=? WHERE id=?", (new_name, old_id))
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+
+    def delete_tag(self, tag_name):
+        c = self.conn.cursor()
+        c.execute("SELECT id FROM tags WHERE name=?", (tag_name,))
+        res = c.fetchone()
+        if res:
+            tag_id = res[0]
+            c.execute("DELETE FROM idea_tags WHERE tag_id=?", (tag_id,))
+            c.execute("DELETE FROM tags WHERE id=?", (tag_id,))
             self.conn.commit()
