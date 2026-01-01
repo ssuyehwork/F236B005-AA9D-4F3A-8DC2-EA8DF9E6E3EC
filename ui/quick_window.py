@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ui/quick_window.py
 import sys
 import os
 import ctypes
@@ -349,6 +350,7 @@ class QuickWindow(QWidget):
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(4)
         
+        # 使用自定义的可拖拽列表
         self.list_widget = DraggableListWidget()
         self.list_widget.setFocusPolicy(Qt.StrongFocus)
         self.list_widget.setAlternatingRowColors(True)
@@ -386,7 +388,7 @@ class QuickWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+P"), self, self._do_toggle_pin)
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
         
-        # 【核心修复】使用 QShortcut 替代 keyPressEvent 监听空格键
+        # 监听空格键：预览
         self.space_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
         self.space_shortcut.setContext(Qt.WindowShortcut)
         self.space_shortcut.activated.connect(self._do_preview)
@@ -394,7 +396,6 @@ class QuickWindow(QWidget):
     def _do_preview(self):
         iid = self._get_selected_id()
         if iid:
-            # 传入集合以兼容接口
             self.preview_service.toggle_preview({iid})
 
     # --- 右键菜单逻辑 ---
@@ -416,7 +417,6 @@ class QuickWindow(QWidget):
             QMenu::separator { background-color: #444; height: 1px; margin: 4px 0px; }
         """)
 
-        # 【新增】右键预览
         action_preview = menu.addAction("👁️ 预览 (Space)")
         action_preview.triggered.connect(self._do_preview)
         
@@ -448,12 +448,11 @@ class QuickWindow(QWidget):
             QApplication.clipboard().setText(content)
 
     # --- 逻辑处理 ---
-
     def _get_selected_id(self):
         item = self.list_widget.currentItem()
         if not item: return None
         data = item.data(Qt.UserRole)
-        if data: return data[0] 
+        if data: return data[0]
         return None
 
     def _do_delete_selected(self):
@@ -618,6 +617,9 @@ class QuickWindow(QWidget):
         items = self.db.get_ideas(search=search_text, f_type=f_type, f_val=f_val)
         self.list_widget.clear()
         
+        # 1. 预加载分类映射 (ID -> Name)
+        categories = {c[0]: c[1] for c in self.db.get_categories()}
+        
         for item_tuple in items:
             list_item = QListWidgetItem()
             list_item.setData(Qt.UserRole, item_tuple)
@@ -635,9 +637,17 @@ class QuickWindow(QWidget):
             display_text = self._get_content_display(item_tuple)
             list_item.setText(display_text)
             
-            content = item_tuple[2]
-            if content:
-                list_item.setToolTip(str(content)[:500])
+            # 【修改】Tooltip 只显示分区和标签
+            idea_id = item_tuple[0]
+            category_id = item_tuple[8]
+            
+            cat_name = categories.get(category_id, "未分类")
+            tags = self.db.get_tags(idea_id)
+            tags_str = " ".join([f"#{t}" for t in tags]) if tags else "无"
+            
+            tooltip = f"📂 分区: {cat_name}\n🏷️ 标签: {tags_str}"
+            list_item.setToolTip(tooltip)
+            
             self.list_widget.addItem(list_item)
         if self.list_widget.count() > 0: self.list_widget.setCurrentRow(0)
 
@@ -824,7 +834,6 @@ class QuickWindow(QWidget):
         key = event.key()
         if key == Qt.Key_Escape: self.close()
         
-        # 移除 Key_Space 的处理，交由 QShortcut
         elif key in (Qt.Key_Up, Qt.Key_Down):
             if not self.list_widget.hasFocus():
                 self.list_widget.setFocus()
