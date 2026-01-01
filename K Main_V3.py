@@ -3,7 +3,7 @@ import sys
 import time
 import os
 from PyQt5.QtWidgets import QApplication, QMenu, QSystemTrayIcon
-from PyQt5.QtCore import QObject, Qt, QPoint
+from PyQt5.QtCore import QObject, Qt
 from PyQt5.QtGui import QIcon
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 
@@ -53,6 +53,27 @@ class AppManager(QObject):
 
         self.ball = FloatingBall(self.main_window)
         
+        # 动态绑定悬浮球右键菜单
+        original_context_menu = self.ball.contextMenuEvent
+        def new_context_menu(e):
+            m = QMenu(self.ball)
+            m.setStyleSheet("""
+                QMenu { background-color: #1a1a1a; color: #00f3ff; border: 1px solid #333; padding: 5px; }
+                QMenu::item { padding: 5px 20px; }
+                QMenu::item:selected { background-color: #00f3ff; color: #000; border-radius: 2px;}
+                QMenu::separator { background-color: #333; height: 1px; margin: 5px 0; }
+            """)
+            m.addAction('⚡ 打开快速笔记', self.ball.request_show_quick_window.emit)
+            m.addAction('💻 打开主界面', self.ball.request_show_main_window.emit)
+            m.addAction('➕ 新建灵感', self.main_window.new_idea)
+            m.addSeparator()
+            m.addAction('🏷️ 管理常用标签', self._open_common_tags_manager)
+            m.addSeparator()
+            m.addAction('❌ 退出', self.ball.request_quit_app.emit)
+            m.exec_(e.globalPos())
+
+        self.ball.contextMenuEvent = new_context_menu
+
         self.ball.request_show_quick_window.connect(self.show_quick_window)
         self.ball.double_clicked.connect(self.show_quick_window)
         self.ball.request_show_main_window.connect(self.show_main_window)
@@ -153,27 +174,8 @@ class AppManager(QObject):
         window.raise_()
         window.activateWindow()
 
-    def show_quick_window(self, pos=None):
-        if not self.quick_window:
-            return
-
-        if pos and isinstance(pos, QPoint):
-            screen_geometry = QApplication.desktop().screenGeometry(pos)
-            win_size = self.quick_window.size()
-
-            x = pos.x()
-            y = pos.y()
-
-            if x + win_size.width() > screen_geometry.right():
-                x = screen_geometry.right() - win_size.width()
-
-            if y + win_size.height() > screen_geometry.bottom():
-                y = screen_geometry.bottom() - win_size.height()
-
-            self.quick_window.move(x, y)
-
+    def show_quick_window(self):
         self._force_activate(self.quick_window)
-
 
     def toggle_quick_window(self):
         if self.quick_window and self.quick_window.isVisible():
