@@ -261,6 +261,8 @@ class QuickWindow(QWidget):
         
         self.partition_tree.currentItemChanged.connect(self._update_partition_status_display)
 
+        self.installEventFilter(self)
+
     def _init_ui(self):
         self.setWindowTitle("快速笔记")
         self.resize(830, 630)
@@ -533,6 +535,14 @@ class QuickWindow(QWidget):
         event.ignore()
 
     # --- Mouse Logic ---
+    def eventFilter(self, obj, event):
+        if event.type() == event.MouseMove:
+            if not self.m_drag and not self.resize_area:
+                pos = self.mapFromGlobal(QCursor.pos())
+                areas = self._get_resize_area(pos)
+                self._set_cursor_shape(areas)
+        return super().eventFilter(obj, event)
+
     def _get_resize_area(self, pos):
         x, y = pos.x(), pos.y()
         w, h = self.width(), self.height()
@@ -566,11 +576,6 @@ class QuickWindow(QWidget):
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.NoButton:
-            areas = self._get_resize_area(event.pos())
-            self._set_cursor_shape(areas)
-            event.accept()
-            return
         if event.buttons() == Qt.LeftButton:
             if self.resize_area:
                 global_pos = event.globalPos()
