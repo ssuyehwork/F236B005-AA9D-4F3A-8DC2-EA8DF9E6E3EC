@@ -7,7 +7,8 @@ from PyQt5.QtGui import QDrag
 from core.config import STYLES
 
 class IdeaCard(QFrame):
-    selection_requested = pyqtSignal(int, bool)
+    # (id, is_ctrl, is_shift)
+    selection_requested = pyqtSignal(int, bool, bool)
     double_clicked = pyqtSignal(int)
 
     def __init__(self, data, db, parent=None):
@@ -23,12 +24,15 @@ class IdeaCard(QFrame):
         self._drag_start_pos = None
         self._is_potential_click = False
         
+        # 这是一个占位符，会在 main_window 中被赋值
+        self.get_selected_ids_func = None
+        
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 12, 15, 12)
-        layout.setSpacing(6) # 稍微减小间距，让内容更紧凑
+        layout.setSpacing(6) 
         
         # --- 顶部：标题 + 图标 ---
         top = QHBoxLayout()
@@ -38,7 +42,6 @@ class IdeaCard(QFrame):
         title = QLabel(self.data[1])
         title.setStyleSheet("font-size:15px; font-weight:bold; background:transparent; color:white;")
         title.setWordWrap(False) # 标题单行显示，超出显示省略号
-        # 设置标题的 Elide 模式需要更复杂的处理，这里暂用样式表控制或默认行为
         top.addWidget(title, stretch=1)
         
         # 图标区域 (置顶/收藏)
@@ -60,8 +63,7 @@ class IdeaCard(QFrame):
         if self.data[2]:
             content_str = self.data[2].strip()
             
-            # 【修复逻辑】不再暴力截断第一行，而是获取一段较长的文本，让 Label 自动换行
-            # 将换行符替换为空格，以便在卡片中连续显示
+            # 获取一段较长的文本，让 Label 自动换行
             preview_text = content_str[:300].replace('\n', ' ').replace('\r', '')
             if len(content_str) > 300:
                 preview_text += "..."
@@ -84,9 +86,10 @@ class IdeaCard(QFrame):
         bot = QHBoxLayout()
         bot.setSpacing(6)
         
-        # 时间
+        # 时间 (带时钟图标)
         time_str = self.data[7][:16] # YYYY-MM-DD HH:mm
-        time_label = QLabel(f'{time_str}')
+        # 【修改】添加时钟图标前缀
+        time_label = QLabel(f'🕒 {time_str}')
         time_label.setStyleSheet("color:rgba(255,255,255,100); font-size:11px; background:transparent;")
         bot.addWidget(time_label)
         
@@ -184,7 +187,17 @@ class IdeaCard(QFrame):
         
         drag = QDrag(self)
         mime = QMimeData()
+        
+        # --- 批量拖拽支持 ---
+        ids_to_move = [self.id]
+        if self.get_selected_ids_func:
+            selected_ids = self.get_selected_ids_func()
+            if self.id in selected_ids:
+                ids_to_move = selected_ids
+        
+        mime.setData('application/x-idea-ids', (','.join(map(str, ids_to_move))).encode('utf-8'))
         mime.setData('application/x-idea-id', str(self.id).encode())
+        
         drag.setMimeData(mime)
         
         pixmap = self.grab().scaledToWidth(200, Qt.SmoothTransformation)
@@ -195,8 +208,10 @@ class IdeaCard(QFrame):
         
     def mouseReleaseEvent(self, e):
         if self._is_potential_click and e.button() == Qt.LeftButton:
-            is_ctrl_pressed = QApplication.keyboardModifiers() == Qt.ControlModifier
-            self.selection_requested.emit(self.id, is_ctrl_pressed)
+            modifiers = QApplication.keyboardModifiers()
+            is_ctrl = bool(modifiers & Qt.ControlModifier)
+            is_shift = bool(modifiers & Qt.ShiftModifier)
+            self.selection_requested.emit(self.id, is_ctrl, is_shift)
 
         self._drag_start_pos = None
         self._is_potential_click = False

@@ -2,13 +2,95 @@
 # ui/advanced_tag_selector.py
 
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QLineEdit, QScrollArea, QLabel, QFrame, QGridLayout)
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint
-from PyQt5.QtGui import QCursor, QFont
+                             QLineEdit, QScrollArea, QLabel, QLayout, QSizePolicy)
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QRect, QSize
+from PyQt5.QtGui import QCursor, QColor
 from core.config import COLORS
 
+# --- 辅助类：流式布局 (保持云朵排列，但排序逻辑会变) ---
+class FlowLayout(QLayout):
+    def __init__(self, parent=None, margin=0, spacing=-1):
+        super(FlowLayout, self).__init__(parent)
+        if parent is not None:
+            self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+        self.itemList = []
+
+    def __del__(self):
+        item = self.takeAt(0)
+        while item:
+            item = self.takeAt(0)
+
+    def addItem(self, item):
+        self.itemList.append(item)
+
+    def count(self):
+        return len(self.itemList)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self.itemList):
+            return self.itemList.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientations(Qt.Orientation(0))
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        height = self.doLayout(QRect(0, 0, width, 0), True)
+        return height
+
+    def setGeometry(self, rect):
+        super(FlowLayout, self).setGeometry(rect)
+        self.doLayout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self.itemList:
+            size = size.expandedTo(item.minimumSize())
+        margin = self.contentsMargins()
+        size += QSize(margin.left() + margin.right(), margin.top() + margin.bottom())
+        return size
+
+    def doLayout(self, rect, testOnly):
+        x = rect.x()
+        y = rect.y()
+        lineHeight = 0
+        spacing = self.spacing()
+
+        for item in self.itemList:
+            wid = item.widget()
+            spaceX = spacing + wid.style().layoutSpacing(QSizePolicy.PushButton, QSizePolicy.PushButton, Qt.Horizontal)
+            spaceY = spacing + wid.style().layoutSpacing(QSizePolicy.PushButton, QSizePolicy.PushButton, Qt.Vertical)
+            
+            nextX = x + item.sizeHint().width() + spaceX
+            if nextX - spaceX > rect.right() and lineHeight > 0:
+                x = rect.x()
+                y = y + lineHeight + spaceY
+                nextX = x + item.sizeHint().width() + spaceX
+                lineHeight = 0
+
+            if not testOnly:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+
+            x = nextX
+            lineHeight = max(lineHeight, item.sizeHint().height())
+
+        return y + lineHeight - rect.y()
+
+# --- 主类 ---
 class AdvancedTagSelector(QWidget):
-    """一个功能更强大的悬浮标签选择面板"""
+    """一个功能更强大的悬浮标签选择面板 (按时间排序 + 动态图标)"""
     tags_confirmed = pyqtSignal(list)
 
     def __init__(self, db, idea_id, parent=None):
@@ -17,8 +99,8 @@ class AdvancedTagSelector(QWidget):
         self.idea_id = idea_id
         
         self.selected_tags = set()
-        self.tag_widgets = {}
-        self._is_closing = False # 添加一个状态标志，防止重复关闭
+        self.tag_buttons = {} # name -> button widget
+        self._is_closing = False 
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -31,12 +113,14 @@ class AdvancedTagSelector(QWidget):
 
     def _init_ui(self):
         """初始化UI界面"""
+        # 主容器
         container = QWidget()
         container.setObjectName("mainContainer")
+        # 背景色调整为更深的灰，接近截图风格
         container.setStyleSheet(f"""
             #mainContainer {{
-                background-color: #282828;
-                border: 1px solid #444;
+                background-color: #1E1E1E; 
+                border: 1px solid #333;
                 border-radius: 8px;
                 color: #EEE;
             }}
@@ -50,156 +134,203 @@ class AdvancedTagSelector(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
+        # 1. 搜索框 (仿截图风格)
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("🔍 搜索标签...")
+        self.search_input.setPlaceholderText("🔍 搜索或新建...")
         self.search_input.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #3C3C3C; border: 1px solid #555;
-                border-radius: 6px; padding: 7px 10px; font-size: 13px;
+                background-color: #2D2D2D; 
+                border: none;
+                border-bottom: 1px solid #444;
+                border-radius: 4px; 
+                padding: 8px; 
+                font-size: 13px; 
+                color: #DDD;
             }}
-            QLineEdit:focus {{ border-color: {COLORS['primary']}; }}
+            QLineEdit:focus {{ border-bottom: 1px solid {COLORS['primary']}; }}
         """)
         self.search_input.textChanged.connect(self._filter_tags)
+        self.search_input.returnPressed.connect(self._on_search_return)
         layout.addWidget(self.search_input)
 
+        # 2. 标题 "最近使用"
+        self.recent_label = QLabel("最近使用")
+        self.recent_label.setStyleSheet("color: #888; font-size: 12px; font-weight: bold; margin-top: 5px;")
+        layout.addWidget(self.recent_label)
+
+        # 3. 滚动区域
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("""
             QScrollArea { border: none; background: transparent; }
+            QWidget { background: transparent; }
             QScrollBar:vertical {
-                border: none; background: #3C3C3C; width: 8px;
-                margin: 0; border-radius: 4px;
+                border: none; background: #2D2D2D; width: 6px; margin: 0;
             }
-            QScrollBar::handle:vertical { background: #555; min-height: 25px; border-radius: 4px; }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::handle:vertical { background: #555; border-radius: 3px; }
         """)
         
         self.scroll_content = QWidget()
-        self.scroll_layout = QVBoxLayout(self.scroll_content)
-        self.scroll_layout.setContentsMargins(0, 5, 0, 5)
-        self.scroll_layout.setSpacing(12)
-        self.scroll_layout.setAlignment(Qt.AlignTop)
+        # 使用流式布局，标签会自动排布
+        self.flow_layout = FlowLayout(self.scroll_content, margin=0, spacing=8)
         
         scroll.setWidget(self.scroll_content)
         layout.addWidget(scroll)
         
-        self.setFixedSize(320, 480)
+        self.setFixedSize(360, 450)
 
     def _load_tags(self):
-        """从数据库加载并显示标签"""
+        """
+        从数据库加载并显示标签
+        【核心修改】按最后使用时间倒序排列 (MAX(i.updated_at) DESC)
+        """
         self.selected_tags = set(self.db.get_tags(self.idea_id))
+        
         c = self.db.conn.cursor()
+        # 这里的 SQL 逻辑是：
+        # 1. 关联 ideas 表
+        # 2. 取出每个标签对应的 idea 中最新的更新时间 (MAX(i.updated_at))
+        # 3. 按这个时间倒序，保证最近用的排最上面
         c.execute('''
-            SELECT t.name, COUNT(it.idea_id) as cnt
+            SELECT t.name, COUNT(it.idea_id) as cnt, MAX(i.updated_at) as last_used
             FROM tags t
             LEFT JOIN idea_tags it ON t.id = it.tag_id
-            JOIN ideas i ON it.idea_id = i.id AND i.is_deleted = 0
-            GROUP BY t.id ORDER BY cnt DESC, t.name ASC
+            LEFT JOIN ideas i ON it.idea_id = i.id AND i.is_deleted = 0
+            GROUP BY t.id 
+            ORDER BY last_used DESC, cnt DESC, t.name ASC
         ''')
         all_tags = c.fetchall()
         
-        top_tags = all_tags[:12]
-        other_tags = all_tags[12:]
-        
-        if top_tags:
-            self._create_group("最近使用", top_tags)
-        if other_tags:
-            self._create_group("其它", other_tags)
-        
-        self._filter_tags()
+        # 更新标题显示数量
+        self.recent_label.setText(f"最近使用 ({len(all_tags)})")
 
-    def _create_group(self, title, tags):
-        """创建标签分组的UI"""
-        group_container = QWidget()
-        group_layout = QVBoxLayout(group_container)
-        group_layout.setContentsMargins(0,0,0,0)
-        group_layout.setSpacing(8)
+        # 清空布局
+        while self.flow_layout.count():
+            item = self.flow_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.tag_buttons.clear()
 
-        group_label = QLabel(f"{title} ({len(tags)})")
-        group_label.setStyleSheet("color: #AAA; font-size: 12px; margin-top: 5px; margin-bottom: 2px;")
-        group_layout.addWidget(group_label)
+        # 生成胶囊按钮
+        for row in all_tags:
+            name = row[0]
+            count = row[1]
+            self._create_tag_chip(name, count)
+
+    def _create_tag_chip(self, name, count=0):
+        """创建一个圆角胶囊风格的标签按钮"""
+        btn = QPushButton()
+        btn.setCheckable(True)
+        btn.setChecked(name in self.selected_tags)
+        btn.setCursor(Qt.PointingHandCursor)
         
-        grid_widget = QWidget()
-        grid = QGridLayout(grid_widget)
-        grid.setContentsMargins(0,0,0,0)
-        grid.setSpacing(8)
+        # 将名称和数量存入属性，方便后续刷新文本
+        btn.setProperty("tag_name", name)
+        btn.setProperty("tag_count", count)
         
-        row, col = 0, 0
-        for name, count in tags:
-            btn_text = f"{name} ({count})"
-            if name in self.selected_tags:
-                btn_text = f"✓ {btn_text}"
-            
-            btn = QPushButton(btn_text)
-            btn.setCheckable(True)
-            btn.setChecked(name in self.selected_tags)
-            btn.setStyleSheet(self._get_button_style(btn.isChecked()))
-            btn.toggled.connect(lambda checked, b=btn, n=name: self._on_tag_toggled(b, n, checked))
-            
-            grid.addWidget(btn, row, col)
-            col += 1
-            if col > 1:
-                col = 0
-                row += 1
-            
-            self.tag_widgets[name] = {"button": btn, "group": group_container, "group_label": group_label}
+        # 初始化文本和样式
+        self._update_chip_state(btn)
         
-        group_layout.addWidget(grid_widget)
-        self.scroll_layout.addWidget(group_container)
+        btn.toggled.connect(lambda checked, b=btn, n=name: self._on_tag_toggled(b, n, checked))
         
+        self.flow_layout.addWidget(btn)
+        self.tag_buttons[name] = btn
+
+    def _update_chip_state(self, btn):
+        """根据选中状态更新：图标 + 文本 + 样式"""
+        name = btn.property("tag_name")
+        count = btn.property("tag_count")
+        checked = btn.isChecked()
+        
+        # 【核心逻辑】图标切换
+        # 未选中 -> 时钟图标 (🕒)
+        # 选中 -> 对勾图标 (✓)
+        icon = "✓" if checked else "🕒"
+        text = f"{icon} {name}"
+        if count > 0:
+            text += f" ({count})"
+        
+        btn.setText(text)
+        
+        # 【样式逻辑】圆角胶囊 (border-radius)
+        if checked:
+            # 选中态：高亮色背景，白色文字
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {COLORS['primary']};
+                    color: white;
+                    border: 1px solid {COLORS['primary']};
+                    border-radius: 14px; /* 圆角 */
+                    padding: 6px 12px;
+                    font-size: 12px;
+                    font-family: "Segoe UI", "Microsoft YaHei";
+                }}
+            """)
+        else:
+            # 未选中态：深灰背景，浅灰文字，更有质感
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2D2D2D;
+                    color: #BBB;
+                    border: 1px solid #444;
+                    border-radius: 14px; /* 圆角 */
+                    padding: 6px 12px;
+                    font-size: 12px;
+                    font-family: "Segoe UI", "Microsoft YaHei";
+                }
+                QPushButton:hover {
+                    background-color: #383838;
+                    border-color: #666;
+                    color: white;
+                }
+            """)
+
     def _on_tag_toggled(self, button, name, checked):
-        """处理标签按钮的点击事件"""
-        button.setStyleSheet(self._get_button_style(checked))
-        count_text = f"({button.text().split('(')[-1]}"
-        base_text = f"{name} {count_text}"
-
         if checked:
             self.selected_tags.add(name)
-            button.setText(f"✓ {base_text}")
         else:
             self.selected_tags.discard(name)
-            button.setText(base_text)
+        # 重新渲染按钮外观（更新图标和颜色）
+        self._update_chip_state(button)
 
     def _filter_tags(self):
         """根据搜索框内容过滤标签"""
-        term = self.search_input.text().lower()
-        visible_tags_in_group = {}
-
-        for name, widgets in self.tag_widgets.items():
-            button, group_label = widgets["button"], widgets["group_label"]
-            if group_label not in visible_tags_in_group:
-                visible_tags_in_group[group_label] = 0
+        term = self.search_input.text().lower().strip()
+        for name, btn in self.tag_buttons.items():
             if term in name.lower():
-                button.show()
-                visible_tags_in_group[group_label] += 1
+                btn.show()
             else:
-                button.hide()
-        
-        for name, widgets in self.tag_widgets.items():
-             group_container, group_label = widgets["group"], widgets["group_label"]
-             if visible_tags_in_group.get(group_label, 0) > 0:
-                 group_container.show()
-             else:
-                 group_container.hide()
+                btn.hide()
 
-    def _get_button_style(self, checked):
-        base_style = """
-            QPushButton {{
-                border-radius: 6px; padding: 7px; text-align: left;
-                font-size: 13px; border: 1px solid {border_color};
-                background-color: {bg_color}; color: {text_color};
-            }}
-            QPushButton:hover {{
-                background-color: #4A4A4A; border-color: #666;
-            }}
-        """
-        if checked:
-            return base_style.format(bg_color=COLORS['primary'], border_color=COLORS['primary'], text_color='white')
-        else:
-            return base_style.format(bg_color="#3C3C3C", border_color="#555", text_color="#DDD")
+    def _on_search_return(self):
+        """智能回车处理"""
+        text = self.search_input.text().strip()
+        if not text:
+            self._handle_close()
+            return
+
+        # 1. 检查是否存在完全匹配
+        found_existing = False
+        for name, btn in self.tag_buttons.items():
+            if name.lower() == text.lower():
+                if not btn.isChecked():
+                    btn.setChecked(True)
+                found_existing = True
+                break
+        
+        # 2. 不存在则创建
+        if not found_existing:
+            self.selected_tags.add(text)
+            self._create_tag_chip(text, 0)
+            new_btn = self.tag_buttons.get(text)
+            if new_btn: 
+                new_btn.setChecked(True)
+        
+        self.search_input.clear()
+        self._filter_tags()
 
     def _save_tags(self):
-        """将最终选择的标签保存到数据库"""
+        """保存标签到数据库"""
         c = self.db.conn.cursor()
         c.execute('DELETE FROM idea_tags WHERE idea_id = ?', (self.idea_id,))
         for tag_name in self.selected_tags:
@@ -212,35 +343,24 @@ class AdvancedTagSelector(QWidget):
         self.db.conn.commit()
 
     def _is_child_widget(self, widget):
-        """检查一个控件是否是此面板的子控件"""
-        if widget is None:
-            return False
-        
+        if widget is None: return False
         current = widget
         while current:
-            if current is self:
-                return True
+            if current is self: return True
             current = current.parent()
         return False
 
     def _on_focus_changed(self, old_widget, new_widget):
-        """全局焦点变化事件处理器"""
-        if self._is_closing or not self.isVisible():
-            return
-        
-        # 如果新的焦点不在这个面板内部，则触发关闭
+        if self._is_closing or not self.isVisible(): return
         if not self._is_child_widget(new_widget):
             self._handle_close()
 
     def _handle_close(self):
-        """封装关闭逻辑"""
-        if self._is_closing:
-            return
+        if self._is_closing: return
         self._is_closing = True
-        
-        # 先断开信号连接，避免重复触发
-        QApplication.instance().focusChanged.disconnect(self._on_focus_changed)
-        
+        try:
+            QApplication.instance().focusChanged.disconnect(self._on_focus_changed)
+        except: pass
         self._save_tags()
         self.tags_confirmed.emit(list(self.selected_tags))
         self.close()

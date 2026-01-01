@@ -1,12 +1,14 @@
 # ui/dialogs.py
+import sys
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGridLayout, QHBoxLayout,
                               QLabel, QLineEdit, QTextEdit, QComboBox, QPushButton,
                               QProgressBar, QFrame, QApplication, QMessageBox, QShortcut,
                              QSpacerItem, QSizePolicy, QSplitter, QWidget, QScrollBar,
-                             QGraphicsDropShadowEffect)
-from PyQt5.QtGui import QKeySequence, QColor
-from PyQt5.QtCore import Qt
+                             QGraphicsDropShadowEffect, QCheckBox)
+from PyQt5.QtGui import QKeySequence, QColor, QCursor
+from PyQt5.QtCore import Qt, QPoint, QRect
 from core.config import STYLES, COLORS
+from core.settings import save_setting, load_setting
 from .components.rich_text_edit import RichTextEdit
 
 # 自定义深灰色滚动条样式
@@ -66,8 +68,8 @@ class BaseDialog(QDialog):
     def _setup_container(self):
         """设置带阴影的主容器"""
         # 外层布局,留出阴影空间
-        outer_layout = QVBoxLayout(self)
-        outer_layout.setContentsMargins(15, 15, 15, 15)
+        self.outer_layout = QVBoxLayout(self)
+        self.outer_layout.setContentsMargins(15, 15, 15, 15)
         
         # 内容容器
         self.content_container = QWidget()
@@ -79,7 +81,7 @@ class BaseDialog(QDialog):
             }}
         """ + STYLES['dialog'] + SCROLLBAR_STYLE)
         
-        outer_layout.addWidget(self.content_container)
+        self.outer_layout.addWidget(self.content_container)
         
         # 添加现代化阴影
         shadow = QGraphicsDropShadowEffect(self)
@@ -92,28 +94,93 @@ class BaseDialog(QDialog):
         # 返回内容容器,子类可以在其中添加布局
         return self.content_container
 
-# === 编辑窗口 (支持左右拉伸 & 深色滚动条 & 阴影) ===
+# === 编辑窗口 (支持 标题栏控制 & 调整大小 & 默认颜色记忆) ===
 class EditDialog(BaseDialog):
+    RESIZE_MARGIN = 10  # 调整大小的边缘敏感区
+
     def __init__(self, db, idea_id=None, parent=None, category_id_for_new=None):
         super().__init__(parent)
         self.db = db
         self.idea_id = idea_id
-        self.selected_color = COLORS['primary']
-        self.category_id = None # 用于加载已存在的数据
-        self.category_id_for_new = category_id_for_new # 用于新建
+        
+        # 加载用户设置的默认颜色，如果没有则使用配置的橙色
+        saved_default = load_setting('user_default_color')
+        self.selected_color = saved_default if saved_default else COLORS['orange']
+        
+        self.category_id = None 
+        self.category_id_for_new = category_id_for_new 
+        
+        # 窗口交互状态
+        self._resize_area = None
+        self._drag_pos = None
+        self._resize_start_pos = None
+        self._resize_start_geometry = None
+        
+        self.setMouseTracking(True) # 开启鼠标追踪以支持调整大小
         
         self._init_ui()
         if idea_id: self._load_data()
         
-        # 使对话框可拖动
-        self._drag_pos = None
-
     def _init_ui(self):
-        self.setWindowTitle('✨ 记录灵感')
         self.resize(950, 650)
         
+        # 主布局
         main_layout = QVBoxLayout(self.content_container)
-        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # 1. 自定义标题栏
+        title_bar = QWidget()
+        title_bar.setFixedHeight(40)
+        title_bar.setStyleSheet(f"""
+            QWidget {{
+                background-color: {COLORS['bg_mid']};
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                border-bottom: 1px solid {COLORS['bg_light']};
+            }}
+        """)
+        tb_layout = QHBoxLayout(title_bar)
+        tb_layout.setContentsMargins(15, 0, 10, 0)
+        
+        self.win_title = QLabel('✨ 记录灵感')
+        self.win_title.setStyleSheet("font-weight: bold; color: #ddd; font-size: 13px; border: none; background: transparent;")
+        tb_layout.addWidget(self.win_title)
+        
+        tb_layout.addStretch()
+        
+        # 窗口控制按钮样式
+        ctrl_btn_style = """
+            QPushButton { background: transparent; border: none; color: #aaa; border-radius: 4px; font-size: 14px; width: 30px; height: 30px; }
+            QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); color: white; }
+        """
+        close_btn_style = """
+            QPushButton { background: transparent; border: none; color: #aaa; border-radius: 4px; font-size: 16px; width: 30px; height: 30px; }
+            QPushButton:hover { background-color: #e74c3c; color: white; }
+        """
+        
+        btn_min = QPushButton("─")
+        btn_min.setStyleSheet(ctrl_btn_style)
+        btn_min.clicked.connect(self.showMinimized)
+        
+        self.btn_max = QPushButton("□")
+        self.btn_max.setStyleSheet(ctrl_btn_style)
+        self.btn_max.clicked.connect(self._toggle_maximize)
+        
+        btn_close = QPushButton("×")
+        btn_close.setStyleSheet(close_btn_style)
+        btn_close.clicked.connect(self.reject)
+        
+        tb_layout.addWidget(btn_min)
+        tb_layout.addWidget(self.btn_max)
+        tb_layout.addWidget(btn_close)
+        
+        main_layout.addWidget(title_bar)
+        
+        # 2. 内容区域 (使用 Splitter)
+        content_widget = QWidget()
+        content_layout = QHBoxLayout(content_widget)
+        content_layout.setContentsMargins(10, 10, 10, 10)
         
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setStyleSheet(f"""
@@ -130,7 +197,7 @@ class EditDialog(BaseDialog):
         # ================= 左侧容器 =================
         left_container = QWidget()
         left_panel = QVBoxLayout(left_container)
-        left_panel.setContentsMargins(15, 15, 15, 15)
+        left_panel.setContentsMargins(5, 5, 5, 5)
         left_panel.setSpacing(12)
         
         left_panel.addWidget(QLabel('📌 标题'))
@@ -151,8 +218,16 @@ class EditDialog(BaseDialog):
         color_layout.setSpacing(10)
         
         self.color_btns = []
-        colors = [COLORS['primary'], COLORS['success'], COLORS['warning'],
-                  COLORS['danger'], COLORS['info'], COLORS['teal']]
+        
+        # 颜色列表
+        colors = [
+            COLORS['orange'],       # 橙色
+            COLORS['default_note'], # 深灰色
+            COLORS['primary'],      # 蓝色
+            COLORS['success'],      # 绿色
+            COLORS['danger'],       # 红色
+            COLORS['info']          # 紫色
+        ]
                   
         for i, c in enumerate(colors):
             btn = QPushButton()
@@ -164,6 +239,16 @@ class EditDialog(BaseDialog):
             color_layout.addWidget(btn, i // 3, i % 3)
             
         left_panel.addLayout(color_layout)
+        
+        # 【新增】设为默认颜色复选框
+        self.chk_set_default = QCheckBox("设为默认颜色")
+        self.chk_set_default.setStyleSheet(f"""
+            QCheckBox {{ color: {COLORS['text_sub']}; font-size: 12px; margin-top: 5px; }}
+            QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid #555; border-radius: 3px; background: transparent; }}
+            QCheckBox::indicator:checked {{ background-color: {COLORS['primary']}; border-color: {COLORS['primary']}; }}
+        """)
+        left_panel.addWidget(self.chk_set_default)
+        
         left_panel.addStretch()
         
         self.save_btn = QPushButton('💾 保存 (Ctrl+S)')
@@ -176,7 +261,7 @@ class EditDialog(BaseDialog):
         # ================= 右侧容器 =================
         right_container = QWidget()
         right_panel = QVBoxLayout(right_container)
-        right_panel.setContentsMargins(15, 15, 15, 15)
+        right_panel.setContentsMargins(5, 5, 5, 5)
         right_panel.setSpacing(10)
         
         right_panel.addWidget(QLabel('📝 详细内容'))
@@ -200,27 +285,109 @@ class EditDialog(BaseDialog):
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         
-        main_layout.addWidget(self.splitter)
+        content_layout.addWidget(self.splitter)
+        main_layout.addWidget(content_widget)
         
         QShortcut(QKeySequence("Ctrl+S"), self, self._save_data)
         QShortcut(QKeySequence("Escape"), self, self.reject)
+        
+        # 选中初始颜色
         self._set_color(self.selected_color)
 
+    # --- 窗口交互逻辑 (调整大小 & 拖动 & 最大化) ---
+    def _get_resize_area(self, pos):
+        """判断鼠标位置是否在调整区域"""
+        x, y = pos.x(), pos.y()
+        w, h = self.width(), self.height()
+        m = self.RESIZE_MARGIN
+        
+        areas = []
+        # 注意：这里坐标是相对于Dialog窗口本身的
+        if x < m: areas.append('left')
+        elif x > w - m: areas.append('right')
+        if y < m: areas.append('top')
+        elif y > h - m: areas.append('bottom')
+        return areas
+
+    def _set_cursor_for_resize(self, areas):
+        if not areas:
+            self.setCursor(Qt.ArrowCursor)
+            return
+        
+        if 'left' in areas and 'top' in areas: self.setCursor(Qt.SizeFDiagCursor)
+        elif 'right' in areas and 'bottom' in areas: self.setCursor(Qt.SizeFDiagCursor)
+        elif 'left' in areas and 'bottom' in areas: self.setCursor(Qt.SizeBDiagCursor)
+        elif 'right' in areas and 'top' in areas: self.setCursor(Qt.SizeBDiagCursor)
+        elif 'left' in areas or 'right' in areas: self.setCursor(Qt.SizeHorCursor)
+        elif 'top' in areas or 'bottom' in areas: self.setCursor(Qt.SizeVerCursor)
+
     def mousePressEvent(self, e):
-        """使对话框可拖动"""
-        if e.button() == Qt.LeftButton and e.pos().y() < 40:
-            self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
+        if e.button() == Qt.LeftButton:
+            areas = self._get_resize_area(e.pos())
+            if areas:
+                self._resize_area = areas
+                self._resize_start_pos = e.globalPos()
+                self._resize_start_geometry = self.geometry()
+                self._drag_pos = None
+            # 只有在标题栏区域才允许拖动 (顶部40px)
+            # 注意：BaseDialog 有 padding，所以点击内容区域的标题栏时，e.pos().y() 会加上 padding
+            # 简单处理：只要不是调整大小，且点击位置靠上，就算拖动
+            elif e.pos().y() < 60: 
+                self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
+                self._resize_area = None
             e.accept()
 
     def mouseMoveEvent(self, e):
-        """拖动对话框"""
-        if e.buttons() == Qt.LeftButton and self._drag_pos:
-            self.move(e.globalPos() - self._drag_pos)
+        if e.buttons() == Qt.NoButton:
+            areas = self._get_resize_area(e.pos())
+            self._set_cursor_for_resize(areas)
+            return
+
+        if e.buttons() == Qt.LeftButton:
+            if self._resize_area:
+                delta = e.globalPos() - self._resize_start_pos
+                rect = self._resize_start_geometry
+                min_w, min_h = 600, 400
+                new_rect = rect.adjusted(0,0,0,0)
+                
+                if 'left' in self._resize_area:
+                    if rect.right() - (rect.left() + delta.x()) >= min_w:
+                        new_rect.setLeft(rect.left() + delta.x())
+                if 'right' in self._resize_area:
+                    if (rect.width() + delta.x()) >= min_w:
+                        new_rect.setWidth(rect.width() + delta.x())
+                if 'top' in self._resize_area:
+                    if rect.bottom() - (rect.top() + delta.y()) >= min_h:
+                        new_rect.setTop(rect.top() + delta.y())
+                if 'bottom' in self._resize_area:
+                    if (rect.height() + delta.y()) >= min_h:
+                        new_rect.setHeight(rect.height() + delta.y())
+                
+                self.setGeometry(new_rect)
+            elif self._drag_pos:
+                self.move(e.globalPos() - self._drag_pos)
             e.accept()
 
     def mouseReleaseEvent(self, e):
-        """结束拖动"""
         self._drag_pos = None
+        self._resize_area = None
+        self.setCursor(Qt.ArrowCursor)
+
+    def mouseDoubleClickEvent(self, e):
+        if e.pos().y() < 60: # 双击标题栏区域
+            self._toggle_maximize()
+
+    def _toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            self.btn_max.setText('□')
+            # 恢复边距以显示阴影
+            self.outer_layout.setContentsMargins(15, 15, 15, 15)
+        else:
+            self.showMaximized()
+            self.btn_max.setText('❐')
+            # 最大化时去除边距
+            self.outer_layout.setContentsMargins(0, 0, 0, 0)
 
     def _set_color(self, color):
         self.selected_color = color
@@ -260,6 +427,11 @@ class EditDialog(BaseDialog):
         content = self.content_inp.toPlainText()
         color = self.selected_color
         
+        # 【新增】检查是否需要保存为默认颜色
+        if self.chk_set_default.isChecked():
+            save_setting('user_default_color', color)
+            print(f"[Settings] 已更新默认新建颜色为: {color}")
+        
         item_type = 'text'
         data_blob = self.content_inp.get_image_data()
         if data_blob:
@@ -274,7 +446,7 @@ class EditDialog(BaseDialog):
         
         self.accept()
 
-# === 看板窗口 ===
+# === 看板窗口 (保持不变) ===
 class StatsDialog(BaseDialog):
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -350,7 +522,7 @@ class StatsDialog(BaseDialog):
         vl.addWidget(lbl_val)
         return f
 
-# === 提取窗口 ===
+# === 提取窗口 (保持不变) ===
 class ExtractDialog(BaseDialog):
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -377,7 +549,7 @@ class ExtractDialog(BaseDialog):
         btn.clicked.connect(lambda: (QApplication.clipboard().setText(text), QMessageBox.information(self,'成功','✅ 内容已复制')))
         layout.addWidget(btn)
 
-# === 预览窗口 ===
+# === 预览窗口 (保持不变) ===
 from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtWidgets import QDesktopWidget
 

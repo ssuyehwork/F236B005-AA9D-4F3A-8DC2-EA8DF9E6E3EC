@@ -3,12 +3,18 @@ DB_NAME = 'ideas.db'
 BACKUP_DIR = 'backups'
 
 COLORS = {
-    'primary': '#4a90e2',   # 核心蓝
+    'primary': '#4a90e2',   # 核心蓝 (UI按钮、高亮)
     'success': '#2ecc71',   # 成功绿
-    'warning': '#f39c12',   # 警告黄
+    'warning': '#f39c12',   # 警告黄 (偏橙黄)
     'danger':  '#e74c3c',   # 危险红
     'info':    '#9b59b6',   # 信息紫
     'teal':    '#1abc9c',   # 青色
+    
+    # 【新增】明确定义的橙色 - 用于新建编辑窗口默认
+    'orange':  '#FF8C00',   # 深橙色
+    
+    # 默认笔记颜色 (深灰色) - 用于剪贴板自动抓取
+    'default_note': '#666666', 
     
     'bg_dark': '#1e1e1e',   # 窗口背景 (最深)
     'bg_mid':  '#252526',   # 侧边栏/输入框背景 (次深)

@@ -3,7 +3,8 @@
 import sqlite3
 import hashlib
 import os
-from core.config import DB_NAME
+import random  # 【新增】引入随机模块
+from core.config import DB_NAME, COLORS
 
 class DatabaseManager:
     def __init__(self):
@@ -14,9 +15,9 @@ class DatabaseManager:
         c = self.conn.cursor()
         
         # 1. 优先创建表
-        c.execute('''CREATE TABLE IF NOT EXISTS ideas (
+        c.execute(f'''CREATE TABLE IF NOT EXISTS ideas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL, content TEXT, color TEXT DEFAULT '#4a90e2',
+            title TEXT NOT NULL, content TEXT, color TEXT DEFAULT '{COLORS['default_note']}',
             is_pinned INTEGER DEFAULT 0, is_favorite INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -33,7 +34,6 @@ class DatabaseManager:
         c.execute('CREATE TABLE IF NOT EXISTS idea_tags (idea_id INTEGER, tag_id INTEGER, PRIMARY KEY (idea_id, tag_id))')
         
         # 2. 检查迁移
-        # 迁移 ideas 表
         c.execute("PRAGMA table_info(ideas)")
         cols = [i[1] for i in c.fetchall()]
         if 'category_id' not in cols:
@@ -54,7 +54,6 @@ class DatabaseManager:
                 c.execute('CREATE INDEX IF NOT EXISTS idx_content_hash ON ideas(content_hash)')
             except: pass
         
-        # 迁移 categories 表
         c.execute("PRAGMA table_info(categories)")
         cat_cols = [i[1] for i in c.fetchall()]
         if 'sort_order' not in cat_cols:
@@ -66,7 +65,10 @@ class DatabaseManager:
         self.conn.commit()
 
     # --- 核心 CRUD ---
-    def add_idea(self, title, content, color, tags, category_id=None, item_type='text', data_blob=None):
+    def add_idea(self, title, content, color=None, tags=[], category_id=None, item_type='text', data_blob=None):
+        if color is None:
+            color = COLORS['default_note']
+            
         c = self.conn.cursor()
         c.execute(
             'INSERT INTO ideas (title, content, color, category_id, item_type, data_blob) VALUES (?,?,?,?,?,?)',
@@ -99,9 +101,6 @@ class DatabaseManager:
                 c.execute('INSERT INTO idea_tags VALUES (?,?)', (iid, tid))
 
     def add_clipboard_item(self, item_type, content, data_blob=None, category_id=None):
-        """
-        专门用于剪贴板项目的新接口，包含去重和自动标记功能。
-        """
         c = self.conn.cursor()
 
         # 1. 计算哈希值
@@ -117,15 +116,12 @@ class DatabaseManager:
         existing_idea = c.fetchone()
 
         if existing_idea:
-            # 内容已存在，更新时间戳
             idea_id = existing_idea[0]
             c.execute("UPDATE ideas SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (idea_id,))
             self.conn.commit()
             print(f"[DEBUG] 内容已存在，更新时间戳，ID={idea_id}")
             return idea_id
         else:
-            # 内容不存在，创建新记录
-            # 自动生成标题
             if item_type == 'text':
                 title = content.strip().split('\n')[0][:50]
             elif item_type == 'image':
@@ -135,18 +131,17 @@ class DatabaseManager:
             else:
                 title = "未命名"
 
-            # 插入数据
+            default_color = COLORS['default_note']
             c.execute(
-                'INSERT INTO ideas (title, content, item_type, data_blob, category_id, content_hash) VALUES (?,?,?,?,?,?)',
-                (title, content, item_type, data_blob, category_id, content_hash)
+                'INSERT INTO ideas (title, content, item_type, data_blob, category_id, content_hash, color) VALUES (?,?,?,?,?,?,?)',
+                (title, content, item_type, data_blob, category_id, content_hash, default_color)
             )
             idea_id = c.lastrowid
             
-            # 自动添加 "剪贴板" 标签
             self._update_tags(idea_id, ["剪贴板"])
             
             self.conn.commit()
-            print(f"[DEBUG] 新增剪贴板内容，ID={idea_id}")
+            print(f"[DEBUG] 新增剪贴板内容，ID={idea_id}, 颜色={default_color}")
             return idea_id
 
     # --- 状态管理 ---
@@ -157,8 +152,6 @@ class DatabaseManager:
 
     def set_deleted(self, iid, state):
         c = self.conn.cursor()
-        # 【修改】更新删除状态的同时，更新 updated_at 为当前时间
-        # 这样在回收站按时间排序时，就能反映删除操作的时间
         c.execute('UPDATE ideas SET is_deleted=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', (1 if state else 0, iid))
         self.conn.commit()
 
@@ -170,6 +163,13 @@ class DatabaseManager:
     def move_category(self, iid, cat_id):
         c = self.conn.cursor()
         c.execute('UPDATE ideas SET category_id=? WHERE id=?', (cat_id, iid))
+        if cat_id is not None:
+            c.execute('SELECT color FROM categories WHERE id=?', (cat_id,))
+            result = c.fetchone()
+            if result and result[0]:
+                cat_color = result[0]
+                c.execute('UPDATE ideas SET color=? WHERE id=?', (cat_color, iid))
+                print(f"[DEBUG] ID={iid} 移动到分类 {cat_id}，颜色更新为 {cat_color}")
         self.conn.commit()
 
     def delete_permanent(self, iid):
@@ -183,7 +183,6 @@ class DatabaseManager:
         if include_blob:
             c.execute('SELECT * FROM ideas WHERE id=?', (iid,))
         else:
-            # 明确排除 data_blob
             c.execute('SELECT id, title, content, color, is_pinned, is_favorite, created_at, updated_at, category_id, item_type FROM ideas WHERE id=?', (iid,))
         return c.fetchone()
 
@@ -207,12 +206,9 @@ class DatabaseManager:
             q += ' AND (i.title LIKE ? OR i.content LIKE ? OR t.name LIKE ?)'
             p.extend([f'%{search}%']*3)
             
-        # 【修改】排序逻辑
         if f_type == 'trash':
-            # 回收站模式：完全按照操作时间（即删除时间）倒序，不考虑置顶
             q += ' ORDER BY i.updated_at DESC'
         else:
-            # 正常模式：置顶优先，然后按更新时间
             q += ' ORDER BY i.is_pinned DESC, i.updated_at DESC'
             
         c.execute(q, p)
@@ -230,8 +226,12 @@ class DatabaseManager:
         return c.fetchall()
 
     def add_category(self, name, parent_id=None):
+        """
+        添加新分类，自动分配随机颜色。
+        """
         c = self.conn.cursor()
-        # 查找当前父级下最大的 sort_order
+        
+        # 1. 计算排序顺序
         if parent_id is None:
             c.execute("SELECT MAX(sort_order) FROM categories WHERE parent_id IS NULL")
         else:
@@ -239,12 +239,31 @@ class DatabaseManager:
         max_order = c.fetchone()[0]
         new_order = (max_order or 0) + 1
         
-        c.execute('INSERT INTO categories (name, parent_id, sort_order) VALUES (?, ?, ?)', (name, parent_id, new_order))
+        # 2. 【核心修改】随机生成颜色
+        # 预设一组好看的分类颜色 (避免过暗或过淡)
+        palette = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD',
+            '#D4A5A5', '#9B59B6', '#3498DB', '#E67E22', '#2ECC71',
+            '#E74C3C', '#F1C40F', '#1ABC9C', '#34495E', '#95A5A6'
+        ]
+        chosen_color = random.choice(palette)
+        
+        # 3. 插入数据库 (显式插入 color 字段)
+        c.execute(
+            'INSERT INTO categories (name, parent_id, sort_order, color) VALUES (?, ?, ?, ?)', 
+            (name, parent_id, new_order, chosen_color)
+        )
         self.conn.commit()
+        print(f"[DEBUG] 新建分类 '{name}'，自动分配颜色: {chosen_color}")
 
     def rename_category(self, cat_id, new_name):
         c = self.conn.cursor()
         c.execute('UPDATE categories SET name=? WHERE id=?', (new_name, cat_id))
+        self.conn.commit()
+    
+    def set_category_color(self, cat_id, color):
+        c = self.conn.cursor()
+        c.execute('UPDATE categories SET color=? WHERE id=?', (color, cat_id))
         self.conn.commit()
 
     def delete_category(self, cid):
@@ -281,7 +300,6 @@ class DatabaseManager:
         return c.fetchall()
 
     def get_partitions_tree(self):
-        """查询并构建一个层级的分类树"""
         class Partition:
             def __init__(self, id, name, color, parent_id, sort_order):
                 self.id = id
@@ -294,7 +312,6 @@ class DatabaseManager:
         c = self.conn.cursor()
         c.execute("SELECT id, name, color, parent_id, sort_order FROM categories ORDER BY sort_order ASC, name ASC")
         
-        # 使用字典来快速查找节点
         nodes = {row[0]: Partition(*row) for row in c.fetchall()}
         
         tree = []
@@ -302,38 +319,28 @@ class DatabaseManager:
             if node.parent_id in nodes:
                 nodes[node.parent_id].children.append(node)
             else:
-                # 顶层节点
                 tree.append(node)
                 
         return tree
 
     def get_partition_item_counts(self):
-        """获取用于快速窗口的各种计数"""
         c = self.conn.cursor()
         counts = {'partitions': {}}
 
-        # 1. 总项目数 (未删除)
         c.execute("SELECT COUNT(*) FROM ideas WHERE is_deleted=0")
         counts['total'] = c.fetchone()[0]
 
-        # 2. 今日修改数 (未删除)
         c.execute("SELECT COUNT(*) FROM ideas WHERE is_deleted=0 AND date(updated_at, 'localtime') = date('now', 'localtime')")
         counts['today_modified'] = c.fetchone()[0]
         
-        # 3. 按分区 (category) 统计
         c.execute("SELECT category_id, COUNT(*) FROM ideas WHERE is_deleted=0 GROUP BY category_id")
         for cat_id, count in c.fetchall():
-            # 在这个简化版本中，我们将 category_id 直接用作 partition_id
             if cat_id is not None:
                 counts['partitions'][cat_id] = count
 
         return counts
     
     def save_category_order(self, update_list):
-        """
-        保存分类的新顺序和父子关系。
-        :param update_list: 一个字典列表,每个字典包含 'id', 'sort_order', 'parent_id'
-        """
         c = self.conn.cursor()
         try:
             c.execute("BEGIN TRANSACTION")
@@ -343,7 +350,6 @@ class DatabaseManager:
                     (item['sort_order'], item['parent_id'], item['id'])
                 )
             c.execute("COMMIT")
-            print(f"[DEBUG] 分类结构已保存: {update_list}")
         except Exception as e:
             c.execute("ROLLBACK")
             print(f"[ERROR] 保存分类结构失败: {e}")

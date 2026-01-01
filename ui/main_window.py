@@ -17,7 +17,7 @@ from ui.dialogs import EditDialog
 from ui.ball import FloatingBall
 from ui.advanced_tag_selector import AdvancedTagSelector
 from ui.components.search_line_edit import SearchLineEdit
-from services.preview_service import PreviewService  # 【新增】导入预览服务
+from services.preview_service import PreviewService
 
 class ContentContainer(QWidget):
     cleared = pyqtSignal()
@@ -38,15 +38,24 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         print("[DEBUG] ========== MainWindow 初始化开始 ==========")
+        
+        # 【核心修复】防止最后一个窗口（如编辑窗口）关闭时导致整个程序退出
+        # 因为主窗口可能处于隐藏状态，悬浮球是 Tool 类型不计入主窗口
+        QApplication.setQuitOnLastWindowClosed(False)
+        
         self.db = DatabaseManager()
         
-        # 【新增】初始化预览服务
+        # 初始化预览服务
         self.preview_service = PreviewService(self.db, self)
         
         self.curr_filter = ('all', None)
         self.selected_ids = set()
         self._drag_pos = None
         self.current_tag_filter = None
+        
+        # 多选辅助变量
+        self.last_clicked_id = None 
+        self.card_ordered_ids = []  
         
         # 调整大小相关变量
         self._resize_area = None
@@ -148,6 +157,7 @@ class MainWindow(QWidget):
         if not self.selected_ids:
             return
         self.selected_ids.clear()
+        self.last_clicked_id = None # 清除选区锚点
         self._update_all_card_selections()
         self._update_ui_state()
 
@@ -491,7 +501,8 @@ class MainWindow(QWidget):
         title = lines[0][:25].strip() if lines else "快速记录"
         if len(lines) > 1 or len(lines[0]) > 25: title += "..."
         
-        idea_id = self.db.add_idea(title, raw, COLORS['primary'], [], None)
+        # 使用默认的深灰色
+        idea_id = self.db.add_idea(title, raw, COLORS['default_note'], [], None)
         print(f"[DEBUG] 快速添加灵感成功,ID={idea_id}")
         
         self._show_tag_selector(idea_id)
@@ -515,6 +526,7 @@ class MainWindow(QWidget):
     def _set_filter(self, f_type, val):
         self.curr_filter = (f_type, val)
         self.selected_ids.clear()
+        self.last_clicked_id = None # 清除选区锚点
         self.current_tag_filter = None
         self.tag_filter_label.hide()
         self.clear_tag_btn.hide()
@@ -537,6 +549,9 @@ class MainWindow(QWidget):
             if w: w.deleteLater()
             
         self.cards = {}
+        # 重置卡片顺序列表
+        self.card_ordered_ids = []
+        
         data_list = self.db.get_ideas(self.search.text(), *self.curr_filter)
         print(f"[DEBUG] 查询到 {len(data_list)} 条数据")
         
@@ -553,18 +568,21 @@ class MainWindow(QWidget):
             
         for d in data_list:
             c = IdeaCard(d, self.db)
+            
+            # 注入获取选中ID的方法
+            c.get_selected_ids_func = lambda: list(self.selected_ids)
 
             c.selection_requested.connect(self._handle_selection_request)
-            # print(f"[DEBUG] 卡片 ID={d[0]} selection_requested 信号连接完成")
             
             c.double_clicked.connect(self._extract_single)
-            # print(f"[DEBUG] 卡片 ID={d[0]} double_clicked 信号连接到 _extract_single")
             
             c.setContextMenuPolicy(Qt.CustomContextMenu)
             c.customContextMenuRequested.connect(lambda pos, iid=d[0]: self._show_card_menu(iid, pos))
             
             self.list_layout.addWidget(c)
             self.cards[d[0]] = c
+            # 记录卡片顺序
+            self.card_ordered_ids.append(d[0])
             
         print(f"[DEBUG] 共创建 {len(self.cards)} 个卡片")
         self._update_ui_state()
@@ -573,6 +591,7 @@ class MainWindow(QWidget):
         # 如果右键点击的项不在当前选择中，则强制只选择该项
         if idea_id not in self.selected_ids:
             self.selected_ids = {idea_id}
+            self.last_clicked_id = idea_id
             self._update_all_card_selections()
             self._update_ui_state()
         
@@ -613,20 +632,51 @@ class MainWindow(QWidget):
             self._refresh_all()
             self._show_tooltip(f'✅ 已移动 {len(self.selected_ids)} 项')
 
-    def _handle_selection_request(self, iid, is_ctrl_pressed):
-        """处理卡片点击事件，更新选择集合"""
-        if not is_ctrl_pressed:
-            # 【修复逻辑】普通单击：
-            # 始终强制选中当前项，并清除其他选中项。
-            # 这符合标准文件管理器的逻辑：单击即选中，只有点击空白处才取消。
-            self.selected_ids.clear()
-            self.selected_ids.add(iid)
-        else:
-            # Ctrl+单击：切换当前项的选中状态
+    def _handle_selection_request(self, iid, is_ctrl, is_shift):
+        """
+        处理卡片点击事件，更新选择集合
+        :param iid: 当前点击的卡片ID
+        :param is_ctrl: 是否按下了 Control 键
+        :param is_shift: 是否按下了 Shift 键
+        """
+        
+        # 1. Shift 范围选择 (优先处理)
+        if is_shift and self.last_clicked_id is not None:
+            # 找到锚点和当前点的索引
+            try:
+                start_index = self.card_ordered_ids.index(self.last_clicked_id)
+                end_index = self.card_ordered_ids.index(iid)
+                
+                # 确定范围
+                min_idx = min(start_index, end_index)
+                max_idx = max(start_index, end_index)
+                
+                # 如果没按住 Ctrl，先清空选择
+                if not is_ctrl:
+                    self.selected_ids.clear()
+                
+                # 添加范围内的所有ID
+                for idx in range(min_idx, max_idx + 1):
+                    self.selected_ids.add(self.card_ordered_ids[idx])
+            except ValueError:
+                # 如果找不到ID（比如被筛选掉了），回退到单选
+                self.selected_ids.clear()
+                self.selected_ids.add(iid)
+                self.last_clicked_id = iid
+                
+        # 2. Control 单个切换
+        elif is_ctrl:
             if iid in self.selected_ids:
                 self.selected_ids.remove(iid)
             else:
                 self.selected_ids.add(iid)
+            self.last_clicked_id = iid # 更新锚点
+            
+        # 3. 普通单击 (清空其他，只选当前)
+        else:
+            self.selected_ids.clear()
+            self.selected_ids.add(iid)
+            self.last_clicked_id = iid # 更新锚点
         
         self._update_all_card_selections()
         self._update_ui_state()
