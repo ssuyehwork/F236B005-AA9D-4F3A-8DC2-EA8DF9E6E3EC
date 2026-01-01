@@ -723,26 +723,25 @@ class QuickWindow(QWidget):
 
         # 删除
         delete_action = menu.addAction("删除")
-        delete_action.triggered.connect(self._delete_item)
+        delete_action.triggered.connect(lambda: self._delete_item(item))
 
         # 收藏
         fav_action = menu.addAction("收藏/取消收藏")
-        fav_action.triggered.connect(self._toggle_favorite)
+        fav_action.triggered.connect(lambda: self._toggle_favorite(item))
 
         # 置顶
         pin_action = menu.addAction("置顶/取消置顶")
-        pin_action.triggered.connect(self._toggle_pinned)
+        pin_action.triggered.connect(lambda: self._toggle_pinned(item))
 
         # 在全局光标位置显示菜单
         menu.exec_(self.list_widget.mapToGlobal(pos))
 
-    def _delete_item(self):
-        """删除当前选中的项目"""
-        current_item = self.list_widget.currentItem()
-        if not current_item:
+    def _delete_item(self, item):
+        """删除指定的项目"""
+        if not item:
             return
 
-        item_data = current_item.data(Qt.UserRole)
+        item_data = item.data(Qt.UserRole)
         if not item_data:
             return
 
@@ -754,13 +753,12 @@ class QuickWindow(QWidget):
         except Exception as e:
             log(f"❌ 删除笔记 {idea_id} 失败: {e}")
 
-    def _toggle_favorite(self):
-        """切换当前选中项目的收藏状态"""
-        current_item = self.list_widget.currentItem()
-        if not current_item:
+    def _toggle_favorite(self, item):
+        """切换指定项目的收藏状态"""
+        if not item:
             return
 
-        item_data = current_item.data(Qt.UserRole)
+        item_data = item.data(Qt.UserRole)
         if not item_data:
             return
 
@@ -772,13 +770,12 @@ class QuickWindow(QWidget):
         except Exception as e:
             log(f"❌ 切换收藏状态失败 for {idea_id}: {e}")
 
-    def _toggle_pinned(self):
-        """切换当前选中项目的置顶状态"""
-        current_item = self.list_widget.currentItem()
-        if not current_item:
+    def _toggle_pinned(self, item):
+        """切换指定项目的置顶状态"""
+        if not item:
             return
 
-        item_data = current_item.data(Qt.UserRole)
+        item_data = item.data(Qt.UserRole)
         if not item_data:
             return
 
