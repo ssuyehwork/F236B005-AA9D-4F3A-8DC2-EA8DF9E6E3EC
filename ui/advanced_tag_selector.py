@@ -191,7 +191,7 @@ class AdvancedTagSelector(QWidget):
             LEFT JOIN idea_tags it ON t.id = it.tag_id
             LEFT JOIN ideas i ON it.idea_id = i.id AND i.is_deleted = 0
             GROUP BY t.id 
-            ORDER BY last_used DESC, cnt DESC, t.name ASC
+            ORDER BY last_used DESC, t.name ASC
         ''')
         all_tags = c.fetchall()
         
