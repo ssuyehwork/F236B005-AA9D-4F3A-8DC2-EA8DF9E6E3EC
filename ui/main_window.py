@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLine
                                QPushButton, QLabel, QScrollArea, QShortcut, QMessageBox,
                                QApplication, QToolTip, QMenu, QFrame, QTextEdit, QDialog,
                                QGraphicsDropShadowEffect, QLayout, QSizePolicy, QInputDialog)
-from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal, QRect, QSize
+from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal, QRect, QSize, QByteArray
 from PyQt5.QtGui import QKeySequence, QCursor, QColor, QIntValidator
 from core.config import STYLES, COLORS
 from core.settings import load_setting, save_setting
@@ -755,7 +755,7 @@ class MainWindow(QWidget):
                 is_active = (self.current_tag_filter == tag_name)
                 icon = "✓" if is_active else "🕒"
                 
-                btn = QPushButton(f'{icon} {tag_name}')
+                btn = QPushButton(f'{icon} {tag_name} ({count})')
                 btn.setCursor(Qt.PointingHandCursor)
                 
                 btn.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -944,20 +944,15 @@ class MainWindow(QWidget):
         self.card_ordered_ids = []
         
         # 【核心补充】此处必须先计算总数，否则分页控件全是 1/1
-        total_items = self.db.get_ideas_count(self.search.text(), *self.curr_filter)
+        total_items = self.db.get_ideas_count(self.search.text(), *self.curr_filter, tag_filter=self.current_tag_filter)
         self.total_pages = math.ceil(total_items / self.page_size) if total_items > 0 else 1
         
         # 修正页码范围
         if self.current_page > self.total_pages: self.current_page = self.total_pages
         if self.current_page < 1: self.current_page = 1
 
-        data_list = self.db.get_ideas(self.search.text(), *self.curr_filter, page=self.current_page, page_size=self.page_size)
+        data_list = self.db.get_ideas(self.search.text(), *self.curr_filter, page=self.current_page, page_size=self.page_size, tag_filter=self.current_tag_filter)
         
-        if self.current_tag_filter:
-            filtered = []
-            for d in data_list:
-                if self.current_tag_filter in self.db.get_tags(d[0]): filtered.append(d)
-            data_list = filtered
         if not data_list:
             self.list_layout.addWidget(QLabel("🔭 空空如也", alignment=Qt.AlignCenter, styleSheet="color:#666;font-size:16px;margin-top:50px"))
         for d in data_list:
@@ -1176,7 +1171,26 @@ class MainWindow(QWidget):
         BackupService.run_backup()
         QApplication.quit()
 
+    def _save_window_state(self):
+        save_setting("main_window_geometry_hex", self.saveGeometry().toHex().data().decode())
+        save_setting("main_window_maximized", self.isMaximized())
+
+    def _restore_window_state(self):
+        geo_hex = load_setting("main_window_geometry_hex")
+        if geo_hex:
+            try:
+                self.restoreGeometry(QByteArray.fromHex(geo_hex.encode()))
+            except Exception:
+                self.resize(1300, 700)
+        else:
+            self.resize(1300, 700)
+
+        if load_setting("main_window_maximized", False):
+            self.showMaximized()
+            self.max_btn.setText('❐')
+
     def closeEvent(self, event):
+        self._save_window_state()
         self.closing.emit()
         self.hide()
         event.ignore()
