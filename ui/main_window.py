@@ -741,7 +741,7 @@ class MainWindow(QWidget):
                 sql += " AND t.name LIKE ?"
                 params.append(f"%{search_term}%")
             
-            sql += ' GROUP BY t.id ORDER BY last_used DESC, cnt DESC, t.name ASC'
+            sql += ' GROUP BY t.id ORDER BY last_used DESC, t.name ASC'
             
             c.execute(sql, params)
             tags = c.fetchall()
