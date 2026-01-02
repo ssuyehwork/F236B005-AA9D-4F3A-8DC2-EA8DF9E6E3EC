@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QListWidget, QL
                              QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, 
                              QLabel, QTreeWidgetItemIterator, QShortcut, QAbstractItemView, QMenu,
                              QColorDialog, QInputDialog, QMessageBox)
-from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject, QSize
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject, QSize, QByteArray
 from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon, QKeySequence, QDrag
 from services.preview_service import PreviewService
 from ui.dialogs import EditDialog
