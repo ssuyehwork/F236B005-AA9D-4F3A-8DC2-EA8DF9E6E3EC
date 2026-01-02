@@ -48,7 +48,6 @@ class AppManager(QObject):
             print("⚠️ 未找到 logo.svg，请确保文件在 assets 文件夹中")
             app_icon = QIcon()
         
-        self.app.setApplicationName("快速笔记")
         self.app.setApplicationDisplayName("快速笔记")
         self.app.setOrganizationName("RapidNotes")
         self.app.setOrganizationDomain("rapidnotes.local")
