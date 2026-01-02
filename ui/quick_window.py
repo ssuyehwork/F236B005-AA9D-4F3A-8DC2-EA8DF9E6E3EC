@@ -200,7 +200,7 @@ class QuickWindow(QWidget):
     def __init__(self, db_manager):
         super().__init__()
         self.db = db_manager
-        self.settings = QSettings("MyTools", "RapidNotes")
+        self.settings = QSettings("RapidNotes", "KMain_V3")
         
         self.m_drag = False
         self.m_DragPosition = QPoint()

@@ -153,7 +153,7 @@ class SearchHistoryPopup(QWidget):
     def __init__(self, search_edit):
         super().__init__(search_edit.window()) 
         self.search_edit = search_edit
-        self.settings = QSettings("KMain_V3", "SearchHistory")
+        self.settings = QSettings("RapidNotes", "KMain_V3")
         
         # 阴影边距设置 (左右下各留空间，上方少留一点)
         self.shadow_margin = 12 
@@ -312,7 +312,7 @@ class SearchLineEdit(QLineEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.settings = QSettings("KMain_V3", "KMain_V3")
+        self.settings = QSettings("RapidNotes", "KMain_V3")
         self.popup = None
 
     def mouseDoubleClickEvent(self, event):
