@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# ui/quick_window.py
 import sys
 import os
 import ctypes
@@ -10,8 +11,8 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QListWidget, QL
                              QListWidgetItem, QHBoxLayout, QTreeWidget, QTreeWidgetItem, 
                              QPushButton, QStyle, QAction, QSplitter, QGraphicsDropShadowEffect, 
                              QLabel, QTreeWidgetItemIterator, QShortcut, QAbstractItemView, QMenu,
-                             QColorDialog, QInputDialog, QMessageBox)
-from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject, QSize
+                             QColorDialog, QInputDialog, QMessageBox, QToolTip) # 【修改】引入 QToolTip
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QUrl, QMimeData, pyqtSignal, QObject, QSize, QByteArray
 from PyQt5.QtGui import QImage, QColor, QCursor, QPixmap, QPainter, QIcon, QKeySequence, QDrag
 from services.preview_service import PreviewService
 from ui.dialogs import EditDialog
@@ -246,7 +247,15 @@ class QuickWindow(QWidget):
         self.cm = ClipboardManager(self.db)
         self.clipboard = QApplication.clipboard()
         self.clipboard.dataChanged.connect(self.on_clipboard_changed)
+        
+        # 【新增】撤销栈，用于记录最近自动创建的 ID
+        self.creation_history = []
+        
+        # 1. 连接更新列表
         self.cm.data_captured.connect(self._update_list)
+        # 2. 连接记录历史 (用于 Ctrl+Z 撤销)
+        self.cm.data_captured.connect(self._record_creation_history)
+        
         self._processing_clipboard = False
         
         self.preview_service = PreviewService(self.db, self)
@@ -423,10 +432,43 @@ class QuickWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+P"), self, self._do_toggle_pin)
         QShortcut(QKeySequence("Ctrl+W"), self, self.close)
         
+        # 【新增】Ctrl+Z 撤销快捷键
+        QShortcut(QKeySequence("Ctrl+Z"), self, self._undo_last_creation)
+        
         # 监听空格键：预览
         self.space_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
         self.space_shortcut.setContext(Qt.WindowShortcut)
         self.space_shortcut.activated.connect(self._do_preview)
+
+    # 【新增】记录创建历史
+    def _record_creation_history(self, idea_id):
+        self.creation_history.append(idea_id)
+        # 限制历史栈大小，避免无限增长，保留最近20条
+        if len(self.creation_history) > 20:
+            self.creation_history.pop(0)
+
+    # 【新增】撤销创建逻辑
+    def _undo_last_creation(self):
+        if not self.creation_history:
+            QToolTip.showText(QCursor.pos(), "⚠️ 没有可撤销的操作", self)
+            return
+
+        last_id = self.creation_history.pop()
+        
+        # 检查 ID 是否存在（可能已经被手动删除了）
+        if self.db.get_idea(last_id):
+            # 彻底删除（因为是误操作，我们不希望它在回收站）
+            self.db.delete_permanent(last_id)
+            
+            # 刷新 UI
+            self._update_list()
+            self._update_partition_tree()
+            
+            # 显示反馈
+            QToolTip.showText(QCursor.pos(), f"↩️ 已撤销最后一次创建 (ID: {last_id})", self)
+        else:
+            # 如果该 ID 已经被删除了，尝试撤销再上一个
+            self._undo_last_creation()
 
     def _do_preview(self):
         iid = self._get_selected_id()

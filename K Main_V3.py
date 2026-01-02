@@ -3,9 +3,9 @@
 import sys
 import time
 import os
-from PyQt5.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QDialog
+from PyQt5.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QDialog, QToolTip
 from PyQt5.QtCore import QObject, Qt
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QCursor
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 from ui.quick_window import QuickWindow
 from ui.main_window import MainWindow
@@ -30,7 +30,6 @@ class AppManager(QObject):
         self.popup = None 
         self.tray_icon = None
         
-        # 【新增】用于持有非模态对话框的引用，防止窗口闪退
         self.tags_manager_dialog = None
 
     def start(self):
@@ -60,7 +59,6 @@ class AppManager(QObject):
         self.ball = FloatingBall(self.main_window)
         
         # --- 悬浮球右键菜单 ---
-        # 注意: 这里的 m.exec_() 是用于QMenu的，是正确的用法，它会堵塞直到用户选择一个选项，这是期望的行为。
         original_context_menu = self.ball.contextMenuEvent
         def new_context_menu(e):
             m = QMenu(self.ball)
@@ -72,7 +70,6 @@ class AppManager(QObject):
             """)
             m.addAction('⚡ 打开快速笔记', self.ball.request_show_quick_window.emit)
             m.addAction('💻 打开主界面', self.ball.request_show_main_window.emit)
-            # 假设 main_window.new_idea 内部也使用了 .exec_(), 您需要用同样的方法去修改 main_window.py
             m.addAction('➕ 新建灵感', self.main_window.new_idea)
             m.addSeparator()
             m.addAction('🏷️ 管理常用标签', self._open_common_tags_manager)
@@ -102,11 +99,12 @@ class AppManager(QObject):
         self.popup.request_favorite.connect(self._handle_popup_favorite)
         self.popup.request_tag_toggle.connect(self._handle_popup_tag_toggle)
         self.popup.request_manager.connect(self._open_common_tags_manager)
+        # 【新增】连接删除信号
+        self.popup.request_delete.connect(self._handle_popup_delete)
         
         self.quick_window.cm.data_captured.connect(self._on_clipboard_data_captured)
 
     def _init_tray_icon(self, icon):
-        """初始化系统托盘图标"""
         self.tray_icon = QSystemTrayIcon(self.app)
         self.tray_icon.setIcon(icon)
         self.tray_icon.setToolTip("快速笔记")
@@ -137,34 +135,21 @@ class AppManager(QObject):
         if reason == QSystemTrayIcon.Trigger:
             self.show_main_window()
 
-    # --- 【核心修改区域】 ---
     def _open_common_tags_manager(self):
-        """以非模态方式打开常用标签管理界面"""
-        # 如果窗口已存在，则只激活它，不创建新的
         if self.tags_manager_dialog and self.tags_manager_dialog.isVisible():
             self._force_activate(self.tags_manager_dialog)
             return
 
-        # 创建实例并赋值给 self.tags_manager_dialog，防止被垃圾回收
         self.tags_manager_dialog = CommonTagsManager()
-
-        # 关键: 使用信号槽处理关闭事件，而不是依赖 exec_ 的返回值
         self.tags_manager_dialog.finished.connect(self._on_tags_manager_closed)
-
-        # 关键: 使用 show() 来显示窗口，不会堵塞
         self.tags_manager_dialog.show()
         self._force_activate(self.tags_manager_dialog)
 
     def _on_tags_manager_closed(self, result):
-        """这是标签管理对话框关闭后会执行的函数"""
-        # 检查是否是“确定”关闭 (在dialogs.py中，保存/确定按钮通常会调用 self.accept())
         if result == QDialog.Accepted:
             if self.popup:
                 self.popup.common_tags_bar.reload_tags()
-        
-        # 清理引用，以便下次可以重新打开
         self.tags_manager_dialog = None
-    # --- 【核心修改区域结束】 ---
 
     def _on_clipboard_data_captured(self, idea_id):
         self.ball.trigger_clipboard_feedback()
@@ -176,6 +161,22 @@ class AppManager(QObject):
         if self.main_window.isVisible():
             self.main_window._load_data()
             self.main_window.sidebar.refresh()
+            
+    # 【新增】处理弹窗的删除请求
+    def _handle_popup_delete(self, idea_id):
+        if idea_id:
+            # 彻底删除（因为是误操作）
+            self.db_manager.delete_permanent(idea_id)
+            
+            # 提示用户
+            QToolTip.showText(QCursor.pos(), "🗑️ 已撤销创建", self.popup)
+            
+            # 刷新可能打开的界面
+            if self.main_window.isVisible():
+                self.main_window._load_data()
+            if self.quick_window.isVisible():
+                self.quick_window._update_list()
+                self.quick_window._update_partition_tree()
 
     def _handle_popup_tag_toggle(self, idea_id, tag_name, checked):
         if checked:
@@ -257,8 +258,6 @@ def main():
     
     manager.start()
     
-    # --- 启动应用主循环 ---
-    # 注意: 这里的 app.exec_() 是Qt应用的主事件循环，必须存在且只能有一个，它会“堵塞”直到整个应用退出。
     sys.exit(app.exec_())
 
 if __name__ == '__main__':

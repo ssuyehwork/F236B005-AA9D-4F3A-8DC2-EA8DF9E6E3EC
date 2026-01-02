@@ -233,7 +233,7 @@ class DatabaseManager:
             c.execute('SELECT id, title, content, color, is_pinned, is_favorite, created_at, updated_at, category_id, item_type FROM ideas WHERE id=?', (iid,))
         return c.fetchone()
 
-    def get_ideas(self, search, f_type, f_val, page=None, page_size=20):
+    def get_ideas(self, search, f_type, f_val, page=None, page_size=20, tag_filter=None):
         c = self.conn.cursor()
         q = "SELECT DISTINCT i.* FROM ideas i LEFT JOIN idea_tags it ON i.id=it.idea_id LEFT JOIN tags t ON it.tag_id=t.id WHERE 1=1"
         p = []
@@ -248,6 +248,10 @@ class DatabaseManager:
         elif f_type == 'clipboard': q += " AND i.id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = '剪贴板'))"
         elif f_type == 'untagged': q += ' AND i.id NOT IN (SELECT idea_id FROM idea_tags)'
         elif f_type == 'favorite': q += ' AND i.is_favorite=1'
+        
+        if tag_filter:
+            q += " AND i.id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = ?))"
+            p.append(tag_filter)
         
         if search:
             q += ' AND (i.title LIKE ? OR i.content LIKE ? OR t.name LIKE ?)'
@@ -267,7 +271,7 @@ class DatabaseManager:
         c.execute(q, p)
         return c.fetchall()
 
-    def get_ideas_count(self, search, f_type, f_val):
+    def get_ideas_count(self, search, f_type, f_val, tag_filter=None):
         c = self.conn.cursor()
         q = "SELECT COUNT(DISTINCT i.id) FROM ideas i LEFT JOIN idea_tags it ON i.id=it.idea_id LEFT JOIN tags t ON it.tag_id=t.id WHERE 1=1"
         p = []
@@ -283,6 +287,10 @@ class DatabaseManager:
         elif f_type == 'untagged': q += ' AND i.id NOT IN (SELECT idea_id FROM idea_tags)'
         elif f_type == 'favorite': q += ' AND i.is_favorite=1'
         
+        if tag_filter:
+            q += " AND i.id IN (SELECT idea_id FROM idea_tags WHERE tag_id = (SELECT id FROM tags WHERE name = ?))"
+            p.append(tag_filter)
+            
         if search:
             q += ' AND (i.title LIKE ? OR i.content LIKE ? OR t.name LIKE ?)'
             p.extend([f'%{search}%']*3)

@@ -185,6 +185,8 @@ class AdvancedTagSelector(QWidget):
             self.selected_tags = set(self.db.get_tags(self.idea_id))
         
         c = self.db.conn.cursor()
+        # 【关键修改】ORDER BY last_used DESC 确保按时间倒序排列
+        # MAX(i.updated_at) 获取该标签最后一次被使用（关联笔记更新）的时间
         c.execute('''
             SELECT t.name, COUNT(it.idea_id) as cnt, MAX(i.updated_at) as last_used
             FROM tags t
