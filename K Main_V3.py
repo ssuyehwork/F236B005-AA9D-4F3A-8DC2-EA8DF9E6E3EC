@@ -1,12 +1,12 @@
-# K Main_V3.py
+# K Main_V3.py (已修改为非模态)
+
 import sys
 import time
 import os
-from PyQt5.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PyQt5.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QDialog
 from PyQt5.QtCore import QObject, Qt
 from PyQt5.QtGui import QIcon
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
-
 from ui.quick_window import QuickWindow
 from ui.main_window import MainWindow
 from ui.ball import FloatingBall
@@ -19,6 +19,7 @@ from core.settings import load_setting
 SERVER_NAME = "K_KUAIJIBIJI_SINGLE_INSTANCE_SERVER"
 
 class AppManager(QObject):
+
     def __init__(self, app):
         super().__init__()
         self.app = app
@@ -27,7 +28,10 @@ class AppManager(QObject):
         self.quick_window = None
         self.ball = None
         self.popup = None 
-        self.tray_icon = None # 新增托盘图标
+        self.tray_icon = None
+        
+        # 【新增】用于持有非模态对话框的引用，防止窗口闪退
+        self.tags_manager_dialog = None
 
     def start(self):
         try:
@@ -36,16 +40,19 @@ class AppManager(QObject):
             print(f"❌ 数据库连接失败: {e}")
             sys.exit(1)
 
-        # 【核心修改】设置全局应用图标 (任务栏图标)
         logo_path = os.path.join("assets", "logo.svg")
         if os.path.exists(logo_path):
             app_icon = QIcon(logo_path)
             self.app.setWindowIcon(app_icon)
         else:
             print("⚠️ 未找到 logo.svg，请确保文件在 assets 文件夹中")
-            app_icon = QIcon() # 空图标防止报错
+            app_icon = QIcon()
+        
+        self.app.setApplicationName("快速笔记")
+        self.app.setApplicationDisplayName("快速笔记")
+        self.app.setOrganizationName("RapidNotes")
+        self.app.setOrganizationDomain("rapidnotes.local")
 
-        # --- 初始化系统托盘 ---
         self._init_tray_icon(app_icon)
 
         self.main_window = MainWindow()
@@ -53,7 +60,8 @@ class AppManager(QObject):
 
         self.ball = FloatingBall(self.main_window)
         
-        # 动态绑定悬浮球右键菜单
+        # --- 悬浮球右键菜单 ---
+        # 注意: 这里的 m.exec_() 是用于QMenu的，是正确的用法，它会堵塞直到用户选择一个选项，这是期望的行为。
         original_context_menu = self.ball.contextMenuEvent
         def new_context_menu(e):
             m = QMenu(self.ball)
@@ -65,6 +73,7 @@ class AppManager(QObject):
             """)
             m.addAction('⚡ 打开快速笔记', self.ball.request_show_quick_window.emit)
             m.addAction('💻 打开主界面', self.ball.request_show_main_window.emit)
+            # 假设 main_window.new_idea 内部也使用了 .exec_(), 您需要用同样的方法去修改 main_window.py
             m.addAction('➕ 新建灵感', self.main_window.new_idea)
             m.addSeparator()
             m.addAction('🏷️ 管理常用标签', self._open_common_tags_manager)
@@ -73,7 +82,6 @@ class AppManager(QObject):
             m.exec_(e.globalPos())
         
         self.ball.contextMenuEvent = new_context_menu
-
         self.ball.request_show_quick_window.connect(self.show_quick_window)
         self.ball.double_clicked.connect(self.show_quick_window)
         self.ball.request_show_main_window.connect(self.show_main_window)
@@ -93,7 +101,6 @@ class AppManager(QObject):
         
         self.popup = ActionPopup() 
         self.popup.request_favorite.connect(self._handle_popup_favorite)
-        # 切换标签信号
         self.popup.request_tag_toggle.connect(self._handle_popup_tag_toggle)
         self.popup.request_manager.connect(self._open_common_tags_manager)
         
@@ -103,11 +110,9 @@ class AppManager(QObject):
         """初始化系统托盘图标"""
         self.tray_icon = QSystemTrayIcon(self.app)
         self.tray_icon.setIcon(icon)
-        self.tray_icon.setToolTip("RapidNotes 快速笔记")
+        self.tray_icon.setToolTip("快速笔记")
         
-        # 托盘右键菜单
         menu = QMenu()
-        # 注意：系统托盘菜单样式通常受操作系统控制，Qt样式表可能不完全生效，但还是加上
         menu.setStyleSheet("""
             QMenu { background-color: #2D2D2D; color: #EEE; border: 1px solid #444; }
             QMenu::item { padding: 6px 24px; }
@@ -126,23 +131,43 @@ class AppManager(QObject):
         action_quit.triggered.connect(self.quit_application)
         
         self.tray_icon.setContextMenu(menu)
-        
-        # 左键点击托盘显示主界面
         self.tray_icon.activated.connect(self._on_tray_icon_activated)
-        
         self.tray_icon.show()
 
     def _on_tray_icon_activated(self, reason):
-        if reason == QSystemTrayIcon.Trigger: # 单击
+        if reason == QSystemTrayIcon.Trigger:
             self.show_main_window()
 
+    # --- 【核心修改区域】 ---
     def _open_common_tags_manager(self):
-        """打开常用标签管理界面"""
-        dlg = CommonTagsManager()
-        self._force_activate(dlg)
-        if dlg.exec_():
+        """以非模态方式打开常用标签管理界面"""
+        # 如果窗口已存在，则只激活它，不创建新的
+        if self.tags_manager_dialog and self.tags_manager_dialog.isVisible():
+            self._force_activate(self.tags_manager_dialog)
+            return
+
+        # 创建实例并赋值给 self.tags_manager_dialog，防止被垃圾回收
+        self.tags_manager_dialog = CommonTagsManager()
+
+        # 关键: 使用信号槽处理关闭事件，而不是依赖 exec_ 的返回值
+        self.tags_manager_dialog.finished.connect(self._on_tags_manager_closed)
+
+        # 关键: 使用 show() 来显示窗口，不会堵塞
+        self.tags_manager_dialog.show()
+        self._force_activate(self.tags_manager_dialog)
+
+    def _on_tags_manager_closed(self, result):
+        """这是标签管理对话框关闭后会执行的函数"""
+        print(f"标签管理器已关闭，返回结果: {result}")
+        # 检查是否是“确定”关闭 (在dialogs.py中，保存/确定按钮通常会调用 self.accept())
+        if result == QDialog.Accepted:
             if self.popup:
                 self.popup.common_tags_bar.reload_tags()
+                print("侦测到修改，已刷新标签栏。")
+        
+        # 清理引用，以便下次可以重新打开
+        self.tags_manager_dialog = None
+    # --- 【核心修改区域结束】 ---
 
     def _on_clipboard_data_captured(self, idea_id):
         self.ball.trigger_clipboard_feedback()
@@ -197,9 +222,9 @@ class AppManager(QObject):
 def main():
     app = QApplication(sys.argv)
     
+    # --- 单例应用逻辑 ---
     socket = QLocalSocket()
     socket.connectToServer(SERVER_NAME)
-
     if socket.waitForConnected(500):
         print("ℹ️  检测到旧实例，发送退出指令...")
         socket.write(b'EXIT')
@@ -226,11 +251,12 @@ def main():
                 manager.show_quick_window()
             elif msg == 'EXIT':
                 manager.quit_application()
-
     server.newConnection.connect(handle_new_connection)
     
     manager.start()
     
+    # --- 启动应用主循环 ---
+    # 注意: 这里的 app.exec_() 是Qt应用的主事件循环，必须存在且只能有一个，它会“堵塞”直到整个应用退出。
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
