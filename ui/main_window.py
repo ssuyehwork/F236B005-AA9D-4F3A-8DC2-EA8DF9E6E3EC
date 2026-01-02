@@ -1073,7 +1073,7 @@ class MainWindow(QWidget):
                 dialog.activateWindow()
                 return
 
-        dialog = EditDialog(self.db, idea_id=idea_id, category_id_for_new=category_id_for_new, parent=self)
+        dialog = EditDialog(self.db, idea_id=idea_id, category_id_for_new=category_id_for_new, parent=None)
         dialog.setAttribute(Qt.WA_DeleteOnClose) # 确保关闭时删除
 
         dialog.accepted.connect(self._refresh_all)
