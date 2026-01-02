@@ -142,6 +142,8 @@ class MainWindow(QWidget):
         self.page_size = 20
         self.total_pages = 1
         
+        self.open_dialogs = [] # 存储打开的窗口
+
         self.setWindowFlags(
             Qt.FramelessWindowHint | 
             Qt.Window | 
@@ -1062,21 +1064,36 @@ class MainWindow(QWidget):
         self._refresh_tag_panel()
 
     def _on_new_data_in_category_requested(self, cat_id):
-        dialog = EditDialog(self.db, category_id_for_new=cat_id, parent=self)
-        if dialog.exec_(): self._refresh_all()
+        self._open_edit_dialog(category_id_for_new=cat_id)
+
+    def _open_edit_dialog(self, idea_id=None, category_id_for_new=None):
+        # 检查是否已存在此ID的窗口
+        for dialog in self.open_dialogs:
+            if hasattr(dialog, 'idea_id') and dialog.idea_id == idea_id and idea_id is not None:
+                dialog.activateWindow()
+                return
+
+        dialog = EditDialog(self.db, idea_id=idea_id, category_id_for_new=category_id_for_new, parent=self)
+        dialog.setAttribute(Qt.WA_DeleteOnClose) # 确保关闭时删除
+
+        dialog.accepted.connect(self._refresh_all)
+        dialog.finished.connect(lambda: self.open_dialogs.remove(dialog))
+
+        self.open_dialogs.append(dialog)
+        dialog.show()
+        dialog.activateWindow()
 
     def _show_tooltip(self, msg, dur=2000):
         QToolTip.showText(QCursor.pos(), msg, self)
         QTimer.singleShot(dur, QToolTip.hideText)
 
     def new_idea(self):
-        if EditDialog(self.db).exec_(): self._refresh_all()
+        self._open_edit_dialog()
 
     def _do_edit(self):
         if len(self.selected_ids) == 1:
             idea_id = list(self.selected_ids)[0]
-            dialog = EditDialog(self.db, idea_id=idea_id)
-            if dialog.exec_(): self._refresh_all()
+            self._open_edit_dialog(idea_id=idea_id)
 
     def _do_pin(self):
         if self.selected_ids:
